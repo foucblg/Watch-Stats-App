@@ -1,20 +1,9 @@
-'use client'
-
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
+"use client"
+import { useEffect, useState } from "react"
+import { supabase } from "@/lib/supabase"
 
 export default function Home() {
-  const router = useRouter()
   const [sleep, setSleep] = useState<any[]>([])
-
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      if (!data.user) {
-        router.replace('/login')
-      }
-    })
-  }, [])
 
   useEffect(() => {
     supabase
