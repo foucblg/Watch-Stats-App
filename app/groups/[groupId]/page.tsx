@@ -19,6 +19,460 @@ type Group = {
   name: string
 }
 
+type YearlyScore = {
+  date: string
+  user_id: string
+  score: number | null
+}
+
+type SleepPhase = {
+  type: string
+  duration: number // en secondes
+}
+
+type MemberSleepPhases = {
+  user_id: string
+  email: string | null
+  display_name: string | null
+  sleepData: Array<{
+    date: string
+    phases: SleepPhase[]
+    totalDuration: number
+  }>
+}
+
+// Générer une couleur unique pour chaque utilisateur basée sur son ID
+function getUserColor(userId: string, members: MemberScore[]): string {
+  const index = members.findIndex(m => m.user_id === userId)
+  if (index === -1) return '#e5e7eb'
+  
+  // Palette de couleurs vives et distinctes
+  const colors = [
+    '#3b82f6', // blue
+    '#ef4444', // red
+    '#10b981', // green
+    '#f59e0b', // amber
+    '#8b5cf6', // purple
+    '#ec4899', // pink
+    '#06b6d4', // cyan
+    '#f97316', // orange
+    '#6366f1', // indigo
+    '#14b8a6', // teal
+    '#84cc16', // lime
+    '#eab308', // yellow
+  ]
+  
+  return colors[index % colors.length]
+}
+
+// Couleurs pour les phases de sommeil
+function getPhaseColor(phaseType: string): string {
+  const colors: Record<string, string> = {
+    awake: '#ef4444', // red
+    light: '#fbbf24', // amber
+    deep: '#3b82f6', // blue
+    rem: '#8b5cf6', // purple
+  }
+  return colors[phaseType.toLowerCase()] || '#9ca3af' // gray par défaut
+}
+
+function formatDuration(seconds: number): string {
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  if (hours > 0) {
+    return `${hours}h${minutes > 0 ? ` ${minutes}min` : ''}`
+  }
+  return `${minutes}min`
+}
+
+// Composant de graphique des phases de sommeil
+function SleepPhasesChart({ 
+  membersPhases 
+}: { 
+  membersPhases: MemberSleepPhases[]
+}) {
+  // Générer les dates des 7 derniers jours
+  const dates: string[] = []
+  for (let i = 0; i < 7; i++) {
+    const date = new Date()
+    date.setDate(date.getDate() - i)
+    dates.push(date.toISOString().split('T')[0])
+  }
+  dates.sort((a, b) => b.localeCompare(a))
+
+  const formatDate = (dateStr: string) => {
+    const date = new Date(dateStr)
+    return date.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' })
+  }
+
+  // Trouver la durée maximale pour normaliser la largeur des barres
+  let maxDuration = 0
+  membersPhases.forEach(member => {
+    member.sleepData.forEach(day => {
+      if (day.totalDuration > maxDuration) {
+        maxDuration = day.totalDuration
+      }
+    })
+  })
+  
+  // Si aucune donnée, utiliser 8 heures par défaut
+  if (maxDuration === 0) {
+    maxDuration = 8 * 3600 // 8 heures en secondes
+  }
+
+  // Organiser les phases par type pour chaque jour
+  const organizePhasesByType = (phases: SleepPhase[]) => {
+    const byType: Record<string, number> = {
+      awake: 0,
+      light: 0,
+      deep: 0,
+      rem: 0,
+    }
+    
+    phases.forEach(phase => {
+      const type = phase.type.toLowerCase()
+      if (byType.hasOwnProperty(type)) {
+        byType[type] += phase.duration
+      }
+    })
+    
+    return byType
+  }
+
+  return (
+    <div className="border rounded-lg p-6 bg-white dark:bg-gray-900">
+      <h2 className="text-xl font-bold mb-4">Phases de sommeil (7 derniers jours)</h2>
+      <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+        Comparaison des phases de sommeil par personne. Chaque barre représente une nuit de sommeil.
+      </p>
+
+      {/* Légende */}
+      <div className="mb-6 flex flex-wrap gap-4 text-sm">
+        {[
+          { type: 'awake', label: 'Éveil' },
+          { type: 'light', label: 'Léger' },
+          { type: 'deep', label: 'Profond' },
+          { type: 'rem', label: 'REM' },
+        ].map(({ type, label }) => (
+          <div key={type} className="flex items-center gap-2">
+            <div
+              className="w-4 h-4 rounded border border-gray-300 dark:border-gray-600"
+              style={{ backgroundColor: getPhaseColor(type) }}
+            />
+            <span>{label}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Graphiques par personne */}
+      <div className="space-y-8">
+        {membersPhases.map(member => (
+          <div key={member.user_id} className="border-b dark:border-gray-700 pb-6 last:border-b-0 last:pb-0">
+            <h3 className="text-lg font-semibold mb-4">
+              {member.display_name || member.email || member.user_id}
+            </h3>
+            
+            {/* Graphiques par jour */}
+            <div className="space-y-3">
+              {dates.map(date => {
+                const dayData = member.sleepData.find(d => d.date === date)
+                if (!dayData || dayData.phases.length === 0) {
+                  return (
+                    <div key={date} className="flex items-center gap-4">
+                      <div className="w-32 text-sm text-gray-500 dark:text-gray-400">
+                        {formatDate(date)}
+                      </div>
+                      <div className="flex-1 text-sm text-gray-400 dark:text-gray-600">
+                        Aucune donnée
+                      </div>
+                    </div>
+                  )
+                }
+
+                const phasesByType = organizePhasesByType(dayData.phases)
+                const totalDuration = dayData.totalDuration
+
+                return (
+                  <div key={date} className="flex items-center gap-4">
+                    <div className="w-32 text-sm text-gray-700 dark:text-gray-300">
+                      {formatDate(date)}
+                    </div>
+                    <div className="flex-1 relative">
+                      {/* Barre de progression - normalisée par rapport à maxDuration pour comparaison */}
+                      <div className="h-10 bg-gray-200 dark:bg-gray-700 rounded overflow-hidden flex relative">
+                        {['awake', 'light', 'deep', 'rem'].map(phaseType => {
+                          const duration = phasesByType[phaseType] || 0
+                          const percentageOfMax = maxDuration > 0 ? (duration / maxDuration) * 100 : 0
+                          const percentageOfTotal = totalDuration > 0 ? (duration / totalDuration) * 100 : 0
+                          
+                          if (duration === 0) return null
+                          
+                          return (
+                            <div
+                              key={phaseType}
+                              className="h-full flex items-center justify-center text-xs font-medium text-white relative"
+                              style={{
+                                width: `${percentageOfMax}%`,
+                                backgroundColor: getPhaseColor(phaseType),
+                                minWidth: duration > 0 ? '2px' : '0',
+                              }}
+                              title={`${phaseType}: ${formatDuration(duration)} (${percentageOfTotal.toFixed(1)}% de la nuit)`}
+                            >
+                              {percentageOfMax > 5 && (
+                                <span className="text-[10px] px-1 truncate">
+                                  {formatDuration(duration)}
+                                </span>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                      {/* Durée totale et pourcentage */}
+                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 flex items-center gap-2">
+                        <span>Total: {formatDuration(totalDuration)}</span>
+                        <span className="text-gray-400 dark:text-gray-600">
+                          ({((totalDuration / maxDuration) * 100).toFixed(0)}% de la durée max)
+                        </span>
+                      </div>
+                    </div>
+                    {/* Détails des phases */}
+                    <div className="w-48 text-xs text-gray-600 dark:text-gray-400">
+                      {Object.entries(phasesByType)
+                        .filter(([_, duration]) => duration > 0)
+                        .map(([type, duration]) => (
+                          <div key={type} className="flex items-center gap-1">
+                            <div
+                              className="w-2 h-2 rounded"
+                              style={{ backgroundColor: getPhaseColor(type) }}
+                            />
+                            <span className="capitalize">{type}:</span>
+                            <span className="font-medium">{formatDuration(duration)}</span>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// Composant de grille de contributions
+function ContributionGrid({ 
+  yearlyScores, 
+  members 
+}: { 
+  yearlyScores: YearlyScore[]
+  members: MemberScore[]
+}) {
+  // Organiser les scores par date
+  const scoresByDate = new Map<string, Map<string, number | null>>()
+  
+  yearlyScores.forEach(score => {
+    if (!scoresByDate.has(score.date)) {
+      scoresByDate.set(score.date, new Map())
+    }
+    scoresByDate.get(score.date)!.set(score.user_id, score.score)
+  })
+  
+  // Trouver le meilleur score pour chaque jour
+  const bestScoresByDate = new Map<string, { user_id: string; score: number }>()
+  
+  scoresByDate.forEach((userScores, date) => {
+    let bestUserId: string | null = null
+    let bestScore: number | null = null
+    
+    userScores.forEach((score, userId) => {
+      if (score !== null && (bestScore === null || score > bestScore)) {
+        bestScore = score
+        bestUserId = userId
+      }
+    })
+    
+    if (bestUserId && bestScore !== null) {
+      bestScoresByDate.set(date, { user_id: bestUserId, score: bestScore })
+    }
+  })
+  
+  // Générer toutes les dates de l'année
+  const startOfYear = new Date(new Date().getFullYear(), 0, 1)
+  const today = new Date()
+  const dates: string[] = []
+  
+  const currentDate = new Date(startOfYear)
+  while (currentDate <= today) {
+    dates.push(currentDate.toISOString().split('T')[0])
+    currentDate.setDate(currentDate.getDate() + 1)
+  }
+  
+  // Organiser les dates par semaine (colonnes = semaines, lignes = jours de la semaine)
+  // getDay() retourne 0=dimanche, 1=lundi, ..., 6=samedi
+  // On veut lundi=0, mardi=1, ..., dimanche=6
+  const getDayOfWeek = (date: Date) => {
+    const day = date.getDay()
+    return day === 0 ? 6 : day - 1 // Convertir dimanche (0) en 6, lundi (1) en 0, etc.
+  }
+  
+  const weeks: string[][] = []
+  const firstDate = new Date(dates[0])
+  const firstDayOfWeek = getDayOfWeek(firstDate)
+  
+  // Créer un tableau pour chaque jour de la semaine (7 lignes)
+  const weekRows: string[][] = [[], [], [], [], [], [], []]
+  
+  // Remplir les jours manquants au début de la première semaine
+  for (let i = 0; i < firstDayOfWeek; i++) {
+    weekRows[i].push('')
+  }
+  
+  // Remplir avec les dates réelles
+  dates.forEach(date => {
+    const dateObj = new Date(date)
+    const dayOfWeek = getDayOfWeek(dateObj)
+    weekRows[dayOfWeek].push(date)
+  })
+  
+  // Remplir les jours manquants à la fin de la dernière semaine
+  const lastDate = new Date(dates[dates.length - 1])
+  const lastDayOfWeek = getDayOfWeek(lastDate)
+  for (let i = lastDayOfWeek + 1; i < 7; i++) {
+    weekRows[i].push('')
+  }
+  
+  // Trouver le nombre maximum de semaines
+  const maxWeeks = Math.max(...weekRows.map(row => row.length))
+  
+  // Organiser en semaines (colonnes)
+  for (let weekIndex = 0; weekIndex < maxWeeks; weekIndex++) {
+    const week: string[] = []
+    for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
+      week.push(weekRows[dayIndex][weekIndex] || '')
+    }
+    weeks.push(week)
+  }
+  
+  const formatTooltipDate = (dateStr: string) => {
+    const date = new Date(dateStr)
+    return date.toLocaleDateString('fr-FR', { 
+      weekday: 'long', 
+      day: 'numeric', 
+      month: 'long',
+      year: 'numeric'
+    })
+  }
+  
+  const getMemberName = (userId: string) => {
+    const member = members.find(m => m.user_id === userId)
+    return member?.display_name || member?.email || userId
+  }
+  
+  return (
+    <div className="border rounded-lg p-6 bg-white dark:bg-gray-900">
+      <h2 className="text-xl font-bold mb-4">Meilleurs scores de l'année</h2>
+      <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+        Chaque carré représente un jour. La couleur indique qui a eu le meilleur score ce jour-là.
+      </p>
+      
+      {/* Légende */}
+      <div className="mb-4 flex flex-wrap gap-4 text-sm">
+        {members.map(member => (
+          <div key={member.user_id} className="flex items-center gap-2">
+            <div 
+              className="w-4 h-4 rounded border border-gray-300 dark:border-gray-600"
+              style={{ backgroundColor: getUserColor(member.user_id, members) }}
+            />
+            <span>{member.display_name || member.email || member.user_id}</span>
+          </div>
+        ))}
+      </div>
+      
+      {/* Grille */}
+      <div className="overflow-x-auto">
+        <div className="inline-flex gap-1">
+          {/* Labels des jours de la semaine */}
+          <div className="flex flex-col gap-1 pr-2">
+            <div className="h-4"></div>
+            {['Lun', 'Mer', 'Ven'].map(day => (
+              <div key={day} className="h-3 text-xs text-gray-500 dark:text-gray-400">
+                {day}
+              </div>
+            ))}
+            <div className="h-3"></div>
+            {['Dim'].map(day => (
+              <div key={day} className="h-3 text-xs text-gray-500 dark:text-gray-400">
+                {day}
+              </div>
+            ))}
+          </div>
+          
+          {/* Grille des semaines (colonnes) */}
+          <div className="flex gap-1">
+            {weeks.map((week, weekIndex) => (
+              <div key={weekIndex} className="flex flex-col gap-1">
+                {week.map((date, dayIndex) => {
+                  if (!date) {
+                    return <div key={`${weekIndex}-${dayIndex}`} className="w-3 h-3" />
+                  }
+                  
+                  const bestScore = bestScoresByDate.get(date)
+                  const color = bestScore 
+                    ? getUserColor(bestScore.user_id, members)
+                    : '#e5e7eb'
+                  
+                  const memberName = bestScore ? getMemberName(bestScore.user_id) : 'Aucun score'
+                  const score = bestScore ? bestScore.score : null
+                  
+                  return (
+                    <div
+                      key={date}
+                      className="w-3 h-3 rounded-sm border border-gray-200 dark:border-gray-700 cursor-pointer hover:ring-2 hover:ring-gray-400 dark:hover:ring-gray-500 transition-all"
+                      style={{ backgroundColor: color }}
+                      title={score !== null 
+                        ? `${formatTooltipDate(date)}\n${memberName}: ${score}`
+                        : formatTooltipDate(date)
+                      }
+                    />
+                  )
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+      
+      {/* Labels des mois */}
+      <div className="mt-2 flex gap-1 pl-8">
+        {Array.from({ length: 12 }, (_, i) => {
+          const monthDate = new Date(new Date().getFullYear(), i, 1)
+          const monthStart = monthDate.toISOString().split('T')[0]
+          const dateIndex = dates.findIndex(d => d >= monthStart)
+          
+          if (dateIndex === -1) return null
+          
+          // Calculer dans quelle semaine se trouve cette date
+          const firstDate = new Date(dates[0])
+          const firstDayOfWeek = getDayOfWeek(firstDate)
+          const weekIndex = Math.floor((dateIndex + firstDayOfWeek) / 7)
+          
+          return (
+            <div 
+              key={i} 
+              className="text-xs text-gray-500 dark:text-gray-400"
+              style={{ marginLeft: i === 0 ? '0' : `${weekIndex * 4}px` }}
+            >
+              {monthDate.toLocaleDateString('fr-FR', { month: 'short' })}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 export default function GroupScoresPage() {
   const router = useRouter()
   const params = useParams()
@@ -26,7 +480,11 @@ export default function GroupScoresPage() {
 
   const [group, setGroup] = useState<Group | null>(null)
   const [members, setMembers] = useState<MemberScore[]>([])
+  const [yearlyScores, setYearlyScores] = useState<YearlyScore[]>([])
+  const [membersPhases, setMembersPhases] = useState<MemberSleepPhases[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadingYearly, setLoadingYearly] = useState(true)
+  const [loadingPhases, setLoadingPhases] = useState(true)
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -85,13 +543,41 @@ export default function GroupScoresPage() {
         if (!cancelled) {
           setMembers(Array.isArray(scoresBody?.members) ? scoresBody.members : [])
         }
+        
+        // Charger les scores de l'année
+        const yearlyRes = await fetch(`/groups/${groupId}/yearly-scores`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        
+        const yearlyBody = await yearlyRes.json().catch(() => ({}))
+        if (yearlyRes.ok) {
+          if (!cancelled) {
+            setYearlyScores(Array.isArray(yearlyBody?.scores) ? yearlyBody.scores : [])
+          }
+        }
+        
+        // Charger les phases de sommeil
+        const phasesRes = await fetch(`/groups/${groupId}/sleep-phases`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        
+        const phasesBody = await phasesRes.json().catch(() => ({}))
+        if (phasesRes.ok) {
+          if (!cancelled) {
+            setMembersPhases(Array.isArray(phasesBody?.members) ? phasesBody.members : [])
+          }
+        }
       } catch (e: any) {
         if (!cancelled) {
           setError(e?.message || 'Impossible de charger les données.')
           setMembers([])
         }
       } finally {
-        if (!cancelled) setLoading(false)
+        if (!cancelled) {
+          setLoading(false)
+          setLoadingYearly(false)
+          setLoadingPhases(false)
+        }
       }
     }
 
@@ -162,54 +648,70 @@ export default function GroupScoresPage() {
       ) : members.length === 0 ? (
         <div className="text-gray-600 dark:text-gray-300">Aucun membre dans ce groupe.</div>
       ) : (
-        <div className="border rounded-lg overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr className="border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
-                  <th className="text-left p-4 font-semibold sticky left-0 bg-gray-50 dark:bg-gray-800 z-10 min-w-[200px]">
-                    Membre
-                  </th>
-                  {dates.map(date => (
-                    <th key={date} className="text-center p-4 font-semibold min-w-[120px]">
-                      <div className="text-sm">{formatDate(date)}</div>
+        <div className="space-y-6">
+          {/* Widget de grille de contributions */}
+          {!loadingYearly && yearlyScores.length > 0 && (
+            <ContributionGrid yearlyScores={yearlyScores} members={members} />
+          )}
+          
+          {/* Widget des phases de sommeil */}
+          {!loadingPhases && membersPhases.length > 0 && (
+            <SleepPhasesChart membersPhases={membersPhases} />
+          )}
+          
+          {/* Widget des scores de la semaine */}
+          <div className="border rounded-lg overflow-hidden">
+            <div className="p-4 bg-gray-50 dark:bg-gray-800 border-b dark:border-gray-700">
+              <h2 className="text-lg font-semibold">Scores de la semaine</h2>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr className="border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+                    <th className="text-left p-4 font-semibold sticky left-0 bg-gray-50 dark:bg-gray-800 z-10 min-w-[200px]">
+                      Membre
                     </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {members.map((member, idx) => (
-                  <tr
-                    key={member.user_id}
-                    className={`border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 ${
-                      idx % 2 === 0 ? 'bg-white dark:bg-gray-900' : 'bg-gray-50/50 dark:bg-gray-800/50'
-                    }`}
-                  >
-                    <td className="p-4 sticky left-0 bg-inherit z-10">
-                      <div className="font-medium">
-                        {member.display_name || member.email || member.user_id}
-                      </div>
-                      {member.display_name && member.email && (
-                        <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">{member.email}</div>
-                      )}
-                    </td>
-                    {dates.map(date => {
-                      const scoreData = member.scores.find(s => s.date === date)
-                      const score = scoreData?.score
-                      return (
-                        <td key={date} className="text-center p-4">
-                          {score !== null && score !== undefined ? (
-                            <div className="font-semibold text-lg">{score}</div>
-                          ) : (
-                            <div className="text-gray-400 dark:text-gray-600">—</div>
-                          )}
-                        </td>
-                      )
-                    })}
+                    {dates.map(date => (
+                      <th key={date} className="text-center p-4 font-semibold min-w-[120px]">
+                        <div className="text-sm">{formatDate(date)}</div>
+                      </th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {members.map((member, idx) => (
+                    <tr
+                      key={member.user_id}
+                      className={`border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 ${
+                        idx % 2 === 0 ? 'bg-white dark:bg-gray-900' : 'bg-gray-50/50 dark:bg-gray-800/50'
+                      }`}
+                    >
+                      <td className="p-4 sticky left-0 bg-inherit z-10">
+                        <div className="font-medium">
+                          {member.display_name || member.email || member.user_id}
+                        </div>
+                        {member.display_name && member.email && (
+                          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">{member.email}</div>
+                        )}
+                      </td>
+                      {dates.map(date => {
+                        const scoreData = member.scores.find(s => s.date === date)
+                        const score = scoreData?.score
+                        return (
+                          <td key={date} className="text-center p-4">
+                            {score !== null && score !== undefined ? (
+                              <div className="font-semibold text-lg">{score}</div>
+                            ) : (
+                              <div className="text-gray-400 dark:text-gray-600">—</div>
+                            )}
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
