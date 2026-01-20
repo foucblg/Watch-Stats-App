@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 export default function Login() {
   const router = useRouter()
   const [isSignUp, setIsSignUp] = useState(false)
+  const [displayName, setDisplayName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -40,6 +41,11 @@ export default function Login() {
       setError('Les mots de passe ne correspondent pas')
       return false
     }
+
+    if (isSignUp && !displayName.trim()) {
+      setError('Display name requis')
+      return false
+    }
     
     return true
   }
@@ -60,6 +66,11 @@ export default function Login() {
         const { error } = await supabase.auth.signUp({
           email,
           password,
+          options: {
+            data: {
+              display_name: displayName.trim(),
+            },
+          },
         })
         
         if (error) {
@@ -67,6 +78,7 @@ export default function Login() {
         } else {
           setSuccess('Compte créé avec succès ! Vérifiez votre email pour confirmer votre compte.')
           // Reset form
+          setDisplayName('')
           setEmail('')
           setPassword('')
           setConfirmPassword('')
@@ -123,6 +135,22 @@ export default function Login() {
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
+            {isSignUp && (
+              <div>
+                <label htmlFor="displayName" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Display name
+                </label>
+                <input
+                  id="displayName"
+                  type="text"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  placeholder="Ton pseudo"
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-all"
+                  disabled={loading}
+                />
+              </div>
+            )}
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Email
@@ -198,6 +226,7 @@ export default function Login() {
                   setIsSignUp(!isSignUp)
                   setError('')
                   setSuccess('')
+                  setDisplayName('')
                   setPassword('')
                   setConfirmPassword('')
                 }}

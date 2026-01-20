@@ -1,2 +1,2 @@
-export { GET } from "./groups"
+export { GET, POST } from "./groups"
 
