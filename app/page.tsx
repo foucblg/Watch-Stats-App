@@ -155,10 +155,14 @@ export default function Home() {
       ) : (
         <div className="grid gap-3">
           {groups.map(g => (
-            <div key={g.id} className="border p-4 rounded">
+            <button
+              key={g.id}
+              onClick={() => router.push(`/groups/${g.id}`)}
+              className="border p-4 rounded hover:bg-gray-50 dark:hover:bg-gray-800 text-left transition-colors"
+            >
               <div className="font-semibold">{g.name}</div>
-              <div className="text-sm text-gray-500 dark:text-gray-400">{g.id}</div>
-            </div>
+              <div className="text-sm text-gray-500 dark:text-gray-400">Voir les scores</div>
+            </button>
           ))}
         </div>
       )}
