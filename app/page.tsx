@@ -29,6 +29,26 @@ export default function Home() {
   useEffect(() => {
     let cancelled = false
 
+    // Vérifier les paramètres de retour OAuth Garmin
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search)
+      const garminConnected = params.get('garmin_connected')
+      const oauthError = params.get('error')
+      
+      if (garminConnected === 'success') {
+        setError('')
+        // Nettoyer l'URL
+        window.history.replaceState({}, '', window.location.pathname)
+        // Ouvrir le modal de compte pour montrer le statut
+        setAccountOpen(true)
+      } else if (oauthError && oauthError.startsWith('garmin_')) {
+        const errorMessage = params.get('message') || 'Erreur lors de la connexion à Garmin'
+        setError(`Garmin: ${errorMessage}`)
+        // Nettoyer l'URL
+        window.history.replaceState({}, '', window.location.pathname)
+      }
+    }
+
     async function load() {
       setLoading(true)
       setError('')
@@ -433,11 +453,12 @@ function AccountModal(props: {
   onDisplayNameChanged: (name: string) => void
 }) {
   const router = useRouter()
-  const [busy, setBusy] = useState<null | 'signout' | 'reset' | 'update_name' | 'delete'>(null)
+  const [busy, setBusy] = useState<null | 'signout' | 'reset' | 'update_name' | 'delete' | 'garmin' | 'garmin_disconnect'>(null)
   const [message, setMessage] = useState<string>('')
   const [modalError, setModalError] = useState<string>('')
   const [newDisplayName, setNewDisplayName] = useState<string>(props.displayName || '')
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [garminConnected, setGarminConnected] = useState<boolean | null>(null)
 
   useEffect(() => {
     if (props.open) {
@@ -446,8 +467,91 @@ function AccountModal(props: {
       setBusy(null)
       setConfirmDelete(false)
       setNewDisplayName(props.displayName || '')
+      checkGarminStatus()
     }
   }, [props.open, props.displayName])
+
+  async function checkGarminStatus() {
+    try {
+      const { data: sessionData } = await supabase.auth.getSession()
+      const token = sessionData.session?.access_token
+      if (!token) return
+
+      const res = await fetch('/garmin/status', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const body = await res.json().catch(() => ({}))
+      if (res.ok) {
+        setGarminConnected(body.connected || false)
+      }
+    } catch (e) {
+      // Ignore errors
+    }
+  }
+
+  async function connectGarmin() {
+    setBusy('garmin')
+    setModalError('')
+    setMessage('')
+    try {
+      const { data: sessionData } = await supabase.auth.getSession()
+      const token = sessionData.session?.access_token
+      if (!token) throw new Error('Non connecté.')
+
+      const { data: { user } } = await supabase.auth.getUser(token)
+      if (!user) throw new Error('Utilisateur introuvable.')
+
+      // Initier le flux OAuth
+      const res = await fetch('/garmin/oauth/initiate', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(body?.error || `Erreur API (${res.status})`)
+
+      const { authUrl, codeVerifier, state } = body
+
+      // Stocker le code_verifier dans sessionStorage pour le récupérer dans le callback
+      // (dans un vrai cas de production, il faudrait stocker cela de manière sécurisée côté serveur)
+      sessionStorage.setItem('garmin_code_verifier', codeVerifier)
+      sessionStorage.setItem('garmin_state', state)
+
+      // Rediriger vers Garmin
+      window.location.href = authUrl
+    } catch (e: any) {
+      setModalError(e?.message || 'Impossible de se connecter à Garmin.')
+      setBusy(null)
+    }
+  }
+
+  async function disconnectGarmin() {
+    if (!confirm('Êtes-vous sûr de vouloir déconnecter votre montre Garmin ?')) {
+      return
+    }
+
+    setBusy('garmin_disconnect')
+    setModalError('')
+    setMessage('')
+    try {
+      const { data: sessionData } = await supabase.auth.getSession()
+      const token = sessionData.session?.access_token
+      if (!token) throw new Error('Non connecté.')
+
+      const res = await fetch('/garmin/disconnect', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(body?.error || `Erreur API (${res.status})`)
+
+      setMessage('Montre Garmin déconnectée avec succès.')
+      setGarminConnected(false)
+    } catch (e: any) {
+      setModalError(e?.message || 'Impossible de déconnecter Garmin.')
+    } finally {
+      setBusy(null)
+    }
+  }
 
   useEffect(() => {
     if (!props.open) return
@@ -620,6 +724,41 @@ function AccountModal(props: {
             >
               Demander une réinitialisation
             </button>
+          </div>
+
+          <div className="border rounded-xl p-4">
+            <div className="font-semibold mb-2">Montre Garmin</div>
+            {garminConnected ? (
+              <div className="space-y-2">
+                <div className="text-sm text-green-600 dark:text-green-400">
+                  ✓ Connectée
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={checkGarminStatus}
+                    className="px-3 py-2 rounded border hover:bg-gray-50 dark:hover:bg-gray-800 text-sm"
+                    disabled={busy !== null}
+                  >
+                    Actualiser le statut
+                  </button>
+                  <button
+                    onClick={disconnectGarmin}
+                    className="px-3 py-2 rounded border border-red-300 text-red-700 hover:bg-red-50 dark:border-red-900/50 dark:text-red-200 dark:hover:bg-red-900/20 text-sm"
+                    disabled={busy !== null}
+                  >
+                    {busy === 'garmin_disconnect' ? 'Déconnexion...' : 'Se déconnecter'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={connectGarmin}
+                className="px-3 py-2 rounded border hover:bg-gray-50 dark:hover:bg-gray-800"
+                disabled={busy !== null}
+              >
+                {busy === 'garmin' ? 'Connexion en cours...' : 'Connecter sa montre Garmin'}
+              </button>
+            )}
           </div>
 
           <div className="border rounded-xl p-4">
