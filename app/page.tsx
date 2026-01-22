@@ -25,6 +25,13 @@ type PendingFriendship = {
   requester_display_name: string | null
 }
 
+type LeaderboardEntry = {
+  user_id: string
+  display_name: string | null
+  score: number | null
+  date: string
+}
+
 export default function Home() {
   const router = useRouter()
   const [groups, setGroups] = useState<Group[]>([])
@@ -38,6 +45,8 @@ export default function Home() {
   const [userEmail, setUserEmail] = useState<string>('')
   const [displayName, setDisplayName] = useState<string>('')
   const [reloadKey, setReloadKey] = useState(0)
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
+  const [leaderboardLoading, setLeaderboardLoading] = useState(true)
 
   useEffect(() => {
     let cancelled = false
@@ -104,6 +113,19 @@ export default function Home() {
         if (pendingRes.ok && !cancelled) {
           const friendships = Array.isArray(pendingBody?.friendships) ? pendingBody.friendships : []
           setPendingCount(friendships.length)
+        }
+
+        // Charger le classement général
+        const leaderboardRes = await fetch('/leaderboard', {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        const leaderboardBody = await leaderboardRes.json().catch(() => ({}))
+        if (leaderboardRes.ok && !cancelled) {
+          const entries = Array.isArray(leaderboardBody?.leaderboard) ? leaderboardBody.leaderboard : []
+          setLeaderboard(entries)
+        }
+        if (!cancelled) {
+          setLeaderboardLoading(false)
         }
       } catch (e: any) {
         if (!cancelled) {
@@ -265,6 +287,39 @@ export default function Home() {
           {error}
         </div>
       )}
+
+      {/* Classement général */}
+      <div className="mb-8 border rounded-xl p-6 bg-white dark:bg-gray-900">
+        <h2 className="text-xl font-bold mb-4">Classement général - Meilleur score de la nuit</h2>
+        {leaderboardLoading ? (
+          <div className="text-gray-600 dark:text-gray-300">Chargement du classement…</div>
+        ) : leaderboard.length === 0 ? (
+          <div className="text-gray-600 dark:text-gray-300">Aucun score disponible aujourd'hui.</div>
+        ) : (
+          <div className="grid gap-2">
+            {leaderboard.map((entry, index) => (
+              <div
+                key={entry.user_id}
+                className="flex items-center justify-between gap-4 p-3 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center justify-center w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 font-semibold text-sm">
+                    {index + 1}
+                  </div>
+                  <div>
+                    <div className="font-medium">
+                      {entry.display_name || entry.user_id}
+                    </div>
+                  </div>
+                </div>
+                <div className="text-lg font-bold text-blue-600 dark:text-blue-400">
+                  {entry.score !== null ? entry.score.toFixed(1) : '—'}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {loading ? (
         <div className="text-gray-600 dark:text-gray-300">Chargement…</div>
