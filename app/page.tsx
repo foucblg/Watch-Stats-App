@@ -327,7 +327,8 @@ function CreateGroupModal(props: {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SearchUser[]>([])
   const [selected, setSelected] = useState<SearchUser[]>([])
-  const [busy, setBusy] = useState<null | 'search' | 'create'>(null)
+  const [friends, setFriends] = useState<SearchUser[]>([])
+  const [busy, setBusy] = useState<null | 'search' | 'create' | 'loadFriends'>(null)
   const [message, setMessage] = useState('')
   const [modalError, setModalError] = useState('')
 
@@ -340,8 +341,36 @@ function CreateGroupModal(props: {
       setBusy(null)
       setMessage('')
       setModalError('')
+      loadFriends()
     }
   }, [props.open])
+
+  async function loadFriends() {
+    setBusy('loadFriends')
+    try {
+      const { data: sessionData } = await supabase.auth.getSession()
+      const token = sessionData.session?.access_token
+      if (!token) throw new Error('Non connecté.')
+
+      const res = await fetch('/friendships', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(body?.error || `Erreur API (${res.status})`)
+
+      const friendsList = Array.isArray(body?.friends) ? body.friends : []
+      setFriends(friendsList.map((f: any) => ({
+        id: f.id,
+        email: f.email,
+        display_name: f.display_name,
+      })))
+    } catch (e: any) {
+      setModalError(e?.message || 'Impossible de charger la liste des amis.')
+      setFriends([])
+    } finally {
+      setBusy(null)
+    }
+  }
 
   useEffect(() => {
     if (!props.open) return
@@ -375,7 +404,10 @@ function CreateGroupModal(props: {
         if (!res.ok) throw new Error(body?.error || `Erreur API (${res.status})`)
 
         const users = Array.isArray(body?.users) ? body.users : []
-        setResults(users)
+        // Filtrer pour ne garder que les amis
+        const friendIds = new Set(friends.map(f => f.id))
+        const filteredUsers = users.filter((u: SearchUser) => friendIds.has(u.id))
+        setResults(filteredUsers)
       } catch (e: any) {
         setModalError(e?.message || 'Impossible de rechercher des utilisateurs.')
         setResults([])
@@ -385,7 +417,7 @@ function CreateGroupModal(props: {
     }, 300)
 
     return () => window.clearTimeout(t)
-  }, [props.open, query])
+  }, [props.open, query, friends])
 
   function addUser(u: SearchUser) {
     if (selected.some(s => s.id === u.id)) return
@@ -478,6 +510,9 @@ function CreateGroupModal(props: {
 
           <div className="border rounded-xl p-4">
             <div className="font-semibold mb-2">Ajouter des membres</div>
+            <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+              Vous ne pouvez ajouter que vos amis dans un groupe.
+            </div>
             <input
               value={query}
               onChange={e => setQuery(e.target.value)}
@@ -486,10 +521,14 @@ function CreateGroupModal(props: {
               disabled={busy !== null}
             />
 
-            {busy === 'search' ? (
+            {busy === 'search' || busy === 'loadFriends' ? (
               <div className="text-sm text-gray-600 dark:text-gray-300">Recherche…</div>
             ) : results.length === 0 ? (
-              <div className="text-sm text-gray-600 dark:text-gray-300">Aucun résultat.</div>
+              <div className="text-sm text-gray-600 dark:text-gray-300">
+                {query.trim().length >= 2
+                  ? 'Aucun ami trouvé correspondant à votre recherche.'
+                  : 'Tapez au moins 2 caractères pour rechercher parmi vos amis.'}
+              </div>
             ) : (
               <div className="grid gap-2">
                 {results.map(u => {

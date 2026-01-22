@@ -144,10 +144,45 @@ export async function POST(req: Request): Promise<Response> {
     return json({ error: "Non autorisé: token invalide ou expiré." }, { status: 401 })
   }
 
-  // 2) Créer le groupe + membres via service role
+  // 2) Créer le client admin et vérifier que tous les membres sont des amis
   const supabaseAdmin = createClient(url, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
   })
+
+  if (memberUserIds.length > 0) {
+    // Récupérer les amis (statut accepted)
+    const { data: friendshipsAsRequester } = await supabaseAdmin
+      .from("friendship")
+      .select("addressee_id")
+      .eq("requester_id", user.id)
+      .eq("status", "accepted")
+
+    const { data: friendshipsAsAddressee } = await supabaseAdmin
+      .from("friendship")
+      .select("requester_id")
+      .eq("addressee_id", user.id)
+      .eq("status", "accepted")
+
+    // Collecter tous les IDs d'amis
+    const friendIds = new Set<string>()
+    if (friendshipsAsRequester) {
+      friendshipsAsRequester.forEach((f: any) => friendIds.add(f.addressee_id))
+    }
+    if (friendshipsAsAddressee) {
+      friendshipsAsAddressee.forEach((f: any) => friendIds.add(f.requester_id))
+    }
+
+    // Vérifier que tous les membres sont des amis
+    const nonFriends = memberUserIds.filter(id => !friendIds.has(id))
+    if (nonFriends.length > 0) {
+      return json(
+        { error: "Vous ne pouvez ajouter que vos amis dans un groupe." },
+        { status: 400 }
+      )
+    }
+  }
+
+  // 3) Créer le groupe + membres
 
   const { data: createdGroup, error: createGroupError } = await supabaseAdmin
     .from("groups")

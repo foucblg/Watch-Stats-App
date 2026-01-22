@@ -22,6 +22,105 @@ type CreateFriendshipBody = {
   addressee_id?: unknown
 }
 
+type Friend = {
+  id: string
+  email: string | null
+  display_name: string | null
+}
+
+export async function GET(req: Request): Promise<Response> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+  if (!url || !anonKey) {
+    return json(
+      { error: "Configuration Supabase manquante (NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY)." },
+      { status: 500 },
+    )
+  }
+
+  if (!serviceRoleKey) {
+    return json(
+      {
+        error:
+          "Récupération impossible: variable serveur SUPABASE_SERVICE_ROLE_KEY manquante (ne jamais utiliser une clé NEXT_PUBLIC).",
+      },
+      { status: 500 },
+    )
+  }
+
+  const token = getBearerToken(req)
+  if (!token) {
+    return json({ error: "Non autorisé: token Bearer manquant." }, { status: 401 })
+  }
+
+  // Vérifier le user à partir du token (clé anon)
+  const supabaseUser = createClient(url, anonKey, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    global: { headers: { Authorization: `Bearer ${token}` } },
+  })
+
+  const {
+    data: { user },
+    error: userError,
+  } = await supabaseUser.auth.getUser(token)
+
+  if (userError || !user) {
+    return json({ error: "Non autorisé: token invalide ou expiré." }, { status: 401 })
+  }
+
+  // Récupérer les amis (statut accepted) via service role
+  const supabaseAdmin = createClient(url, serviceRoleKey, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  })
+
+  // Récupérer les amitiés où l'utilisateur est le demandeur
+  const { data: friendshipsAsRequester } = await supabaseAdmin
+    .from("friendship")
+    .select("addressee_id")
+    .eq("requester_id", user.id)
+    .eq("status", "accepted")
+
+  // Récupérer les amitiés où l'utilisateur est le destinataire
+  const { data: friendshipsAsAddressee } = await supabaseAdmin
+    .from("friendship")
+    .select("requester_id")
+    .eq("addressee_id", user.id)
+    .eq("status", "accepted")
+
+  // Collecter tous les IDs d'amis
+  const friendIds = new Set<string>()
+  if (friendshipsAsRequester) {
+    friendshipsAsRequester.forEach((f: any) => friendIds.add(f.addressee_id))
+  }
+  if (friendshipsAsAddressee) {
+    friendshipsAsAddressee.forEach((f: any) => friendIds.add(f.requester_id))
+  }
+
+  // Récupérer les informations des amis
+  const friends: Friend[] = []
+  for (const friendId of friendIds) {
+    try {
+      const { data: friend, error: friendError } = await supabaseAdmin.auth.admin.getUserById(friendId)
+      if (friendError || !friend) continue
+
+      const email = friend.email || null
+      const displayName = ((friend.user_metadata as any)?.display_name ?? null) as string | null
+
+      friends.push({
+        id: friendId,
+        email,
+        display_name: displayName,
+      })
+    } catch (e) {
+      // Ignore errors for individual users
+    }
+  }
+
+  return json({ friends })
+}
+
 export async function POST(req: Request): Promise<Response> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
