@@ -15,6 +15,16 @@ type SearchUser = {
   display_name: string | null
 }
 
+type PendingFriendship = {
+  id: string
+  requester_id: string
+  addressee_id: string
+  status: string
+  created_at: string
+  requester_email: string | null
+  requester_display_name: string | null
+}
+
 export default function Home() {
   const router = useRouter()
   const [groups, setGroups] = useState<Group[]>([])
@@ -22,6 +32,9 @@ export default function Home() {
   const [error, setError] = useState('')
   const [accountOpen, setAccountOpen] = useState(false)
   const [createGroupOpen, setCreateGroupOpen] = useState(false)
+  const [addFriendOpen, setAddFriendOpen] = useState(false)
+  const [invitationsOpen, setInvitationsOpen] = useState(false)
+  const [pendingCount, setPendingCount] = useState(0)
   const [userEmail, setUserEmail] = useState<string>('')
   const [displayName, setDisplayName] = useState<string>('')
   const [reloadKey, setReloadKey] = useState(0)
@@ -82,6 +95,16 @@ export default function Home() {
         if (!cancelled) {
           setGroups(Array.isArray(body?.groups) ? body.groups : [])
         }
+
+        // Charger les invitations en attente
+        const pendingRes = await fetch('/friendships/pending', {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        const pendingBody = await pendingRes.json().catch(() => ({}))
+        if (pendingRes.ok && !cancelled) {
+          const friendships = Array.isArray(pendingBody?.friendships) ? pendingBody.friendships : []
+          setPendingCount(friendships.length)
+        }
       } catch (e: any) {
         if (!cancelled) {
           setError(e?.message || 'Une erreur est survenue.')
@@ -129,6 +152,45 @@ export default function Home() {
           </button>
 
           <button
+            onClick={() => setAddFriendOpen(true)}
+            className="px-3 py-2 rounded border hover:bg-gray-50 dark:hover:bg-gray-800 inline-flex items-center gap-2"
+            aria-label="Ajouter un ami"
+            title="Ajouter un ami"
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              aria-hidden="true"
+            >
+              <path
+                d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M22 11v6M19 14h6"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            Ajouter un ami
+          </button>
+
+          <button
             onClick={() => setAccountOpen(true)}
             className="px-3 py-2 rounded border hover:bg-gray-50 dark:hover:bg-gray-800 inline-flex items-center gap-2"
             aria-label="Gestion de compte"
@@ -158,6 +220,42 @@ export default function Home() {
               />
             </svg>
             Gestion de compte
+          </button>
+
+          <button
+            onClick={() => setInvitationsOpen(true)}
+            className="relative px-3 py-2 rounded border hover:bg-gray-50 dark:hover:bg-gray-800 inline-flex items-center gap-2"
+            aria-label="Invitations d'amitié"
+            title="Invitations d'amitié"
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              aria-hidden="true"
+            >
+              <path
+                d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M13.73 21a2 2 0 0 1-3.46 0"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            {pendingCount > 0 && (
+              <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white">
+                {pendingCount > 9 ? '9+' : pendingCount}
+              </span>
+            )}
           </button>
         </div>
       </div>
@@ -199,6 +297,22 @@ export default function Home() {
         open={createGroupOpen}
         onClose={() => setCreateGroupOpen(false)}
         onCreated={() => setReloadKey(k => k + 1)}
+      />
+
+      <AddFriendModal
+        open={addFriendOpen}
+        onClose={() => setAddFriendOpen(false)}
+        onSent={() => {
+          setReloadKey(k => k + 1)
+        }}
+      />
+
+      <InvitationsModal
+        open={invitationsOpen}
+        onClose={() => setInvitationsOpen(false)}
+        onUpdated={() => {
+          setReloadKey(k => k + 1)
+        }}
       />
     </main>
   )
@@ -795,6 +909,380 @@ function AccountModal(props: {
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  )
+}
+
+function AddFriendModal(props: {
+  open: boolean
+  onClose: () => void
+  onSent: () => void
+}) {
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<SearchUser[]>([])
+  const [selected, setSelected] = useState<SearchUser | null>(null)
+  const [busy, setBusy] = useState<null | 'search' | 'send'>(null)
+  const [message, setMessage] = useState('')
+  const [modalError, setModalError] = useState('')
+
+  useEffect(() => {
+    if (props.open) {
+      setQuery('')
+      setResults([])
+      setSelected(null)
+      setBusy(null)
+      setMessage('')
+      setModalError('')
+    }
+  }, [props.open])
+
+  useEffect(() => {
+    if (!props.open) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') props.onClose()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [props.open, props.onClose])
+
+  useEffect(() => {
+    if (!props.open) return
+    const q = query.trim()
+    if (q.length < 2) {
+      setResults([])
+      return
+    }
+
+    const t = window.setTimeout(async () => {
+      setBusy('search')
+      setModalError('')
+      try {
+        const { data: sessionData } = await supabase.auth.getSession()
+        const token = sessionData.session?.access_token
+        if (!token) throw new Error('Non connecté.')
+
+        const res = await fetch(`/users/search?q=${encodeURIComponent(q)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        const body = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(body?.error || `Erreur API (${res.status})`)
+
+        const users = Array.isArray(body?.users) ? body.users : []
+        setResults(users)
+      } catch (e: any) {
+        setModalError(e?.message || 'Impossible de rechercher des utilisateurs.')
+        setResults([])
+      } finally {
+        setBusy(null)
+      }
+    }, 300)
+
+    return () => window.clearTimeout(t)
+  }, [props.open, query])
+
+  async function sendFriendRequest() {
+    if (!selected) return
+
+    setBusy('send')
+    setModalError('')
+    setMessage('')
+    try {
+      const { data: sessionData } = await supabase.auth.getSession()
+      const token = sessionData.session?.access_token
+      if (!token) throw new Error('Non connecté.')
+
+      const res = await fetch('/friendships', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'content-type': 'application/json; charset=utf-8',
+        },
+        body: JSON.stringify({
+          addressee_id: selected.id,
+        }),
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(body?.error || `Erreur API (${res.status})`)
+
+      setMessage('Demande d\'amitié envoyée.')
+      props.onSent()
+      setTimeout(() => {
+        props.onClose()
+      }, 1500)
+    } catch (e: any) {
+      setModalError(e?.message || 'Impossible d\'envoyer la demande d\'amitié.')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  if (!props.open) return null
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
+      <button className="absolute inset-0 bg-black/40" aria-label="Fermer" onClick={props.onClose} />
+
+      <div className="relative w-full max-w-lg mx-4 rounded-2xl bg-white dark:bg-gray-900 border dark:border-gray-800 shadow-xl p-6">
+        <div className="flex items-start justify-between gap-4 mb-4">
+          <div>
+            <div className="text-lg font-semibold">Ajouter un ami</div>
+            <div className="text-sm text-gray-600 dark:text-gray-300">
+              Recherche un utilisateur par email ou display name.
+            </div>
+          </div>
+          <button onClick={props.onClose} className="px-3 py-2 rounded border hover:bg-gray-50 dark:hover:bg-gray-800">
+            Fermer
+          </button>
+        </div>
+
+        {modalError && (
+          <div className="mb-4 border border-red-200 bg-red-50 text-red-800 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-200 p-3 rounded">
+            {modalError}
+          </div>
+        )}
+        {message && (
+          <div className="mb-4 border border-green-200 bg-green-50 text-green-800 dark:border-green-900/40 dark:bg-green-900/20 dark:text-green-200 p-3 rounded">
+            {message}
+          </div>
+        )}
+
+        <div className="grid gap-4">
+          <div className="border rounded-xl p-4">
+            <div className="font-semibold mb-2">Rechercher un utilisateur</div>
+            <input
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="Rechercher par email ou display name…"
+              className="w-full px-3 py-2 rounded border bg-white dark:bg-gray-800 mb-3"
+              disabled={busy !== null}
+            />
+
+            {busy === 'search' ? (
+              <div className="text-sm text-gray-600 dark:text-gray-300">Recherche…</div>
+            ) : results.length === 0 ? (
+              <div className="text-sm text-gray-600 dark:text-gray-300">
+                {query.trim().length >= 2 ? 'Aucun résultat.' : 'Tapez au moins 2 caractères pour rechercher.'}
+              </div>
+            ) : (
+              <div className="grid gap-2">
+                {results.map(u => {
+                  const isSelected = selected?.id === u.id
+                  return (
+                    <button
+                      key={u.id}
+                      onClick={() => setSelected(isSelected ? null : u)}
+                      className={`flex items-center justify-between gap-3 border rounded-lg p-3 text-left transition-colors ${
+                        isSelected
+                          ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                          : 'hover:bg-gray-50 dark:hover:bg-gray-800'
+                      }`}
+                      disabled={busy !== null}
+                    >
+                      <div className="min-w-0">
+                        <div className="font-medium truncate">{u.display_name || u.email || u.id}</div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                          {u.email || '—'} {u.display_name ? `· ${u.display_name}` : ''}
+                        </div>
+                      </div>
+                      {isSelected && (
+                        <svg
+                          width="20"
+                          height="20"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          className="text-blue-600 dark:text-blue-400"
+                        >
+                          <path
+                            d="M20 6L9 17l-5-5"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
+          {selected && (
+            <div className="border rounded-xl p-4 bg-gray-50 dark:bg-gray-800">
+              <div className="font-semibold mb-2">Utilisateur sélectionné</div>
+              <div className="text-sm">
+                <div className="font-medium">{selected.display_name || selected.email || selected.id}</div>
+                <div className="text-gray-500 dark:text-gray-400">
+                  {selected.email || '—'} {selected.display_name ? `· ${selected.display_name}` : ''}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="flex items-center justify-end gap-2">
+            <button
+              onClick={props.onClose}
+              className="px-3 py-2 rounded border hover:bg-gray-50 dark:hover:bg-gray-800"
+              disabled={busy !== null}
+            >
+              Annuler
+            </button>
+            <button
+              onClick={sendFriendRequest}
+              className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:bg-blue-400"
+              disabled={!selected || busy !== null}
+            >
+              {busy === 'send' ? 'Envoi...' : 'Envoyer la demande'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function InvitationsModal(props: {
+  open: boolean
+  onClose: () => void
+  onUpdated: () => void
+}) {
+  const [friendships, setFriendships] = useState<PendingFriendship[]>([])
+  const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState<string | null>(null)
+  const [modalError, setModalError] = useState('')
+
+  useEffect(() => {
+    if (props.open) {
+      loadInvitations()
+    }
+  }, [props.open])
+
+  useEffect(() => {
+    if (!props.open) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') props.onClose()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [props.open, props.onClose])
+
+  async function loadInvitations() {
+    setLoading(true)
+    setModalError('')
+    try {
+      const { data: sessionData } = await supabase.auth.getSession()
+      const token = sessionData.session?.access_token
+      if (!token) throw new Error('Non connecté.')
+
+      const res = await fetch('/friendships/pending', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(body?.error || `Erreur API (${res.status})`)
+
+      setFriendships(Array.isArray(body?.friendships) ? body.friendships : [])
+    } catch (e: any) {
+      setModalError(e?.message || 'Impossible de charger les invitations.')
+      setFriendships([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function respondToInvitation(id: string, status: 'accepted' | 'refused') {
+    setBusy(id)
+    setModalError('')
+    try {
+      const { data: sessionData } = await supabase.auth.getSession()
+      const token = sessionData.session?.access_token
+      if (!token) throw new Error('Non connecté.')
+
+      const res = await fetch(`/friendships/${id}`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'content-type': 'application/json; charset=utf-8',
+        },
+        body: JSON.stringify({ status }),
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(body?.error || `Erreur API (${res.status})`)
+
+      // Retirer l'invitation de la liste
+      setFriendships(prev => prev.filter(f => f.id !== id))
+      props.onUpdated()
+    } catch (e: any) {
+      setModalError(e?.message || 'Impossible de répondre à l\'invitation.')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  if (!props.open) return null
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
+      <button className="absolute inset-0 bg-black/40" aria-label="Fermer" onClick={props.onClose} />
+
+      <div className="relative w-full max-w-lg mx-4 rounded-2xl bg-white dark:bg-gray-900 border dark:border-gray-800 shadow-xl p-6">
+        <div className="flex items-start justify-between gap-4 mb-4">
+          <div>
+            <div className="text-lg font-semibold">Invitations d'amitié</div>
+            <div className="text-sm text-gray-600 dark:text-gray-300">
+              Acceptez ou refusez les demandes d'amitié en attente.
+            </div>
+          </div>
+          <button onClick={props.onClose} className="px-3 py-2 rounded border hover:bg-gray-50 dark:hover:bg-gray-800">
+            Fermer
+          </button>
+        </div>
+
+        {modalError && (
+          <div className="mb-4 border border-red-200 bg-red-50 text-red-800 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-200 p-3 rounded">
+            {modalError}
+          </div>
+        )}
+
+        {loading ? (
+          <div className="text-gray-600 dark:text-gray-300">Chargement…</div>
+        ) : friendships.length === 0 ? (
+          <div className="text-gray-600 dark:text-gray-300">Aucune invitation en attente.</div>
+        ) : (
+          <div className="grid gap-3">
+            {friendships.map(f => (
+              <div key={f.id} className="border rounded-xl p-4">
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="font-semibold truncate">
+                      {f.requester_display_name || f.requester_email || f.requester_id}
+                    </div>
+                    <div className="text-sm text-gray-500 dark:text-gray-400 truncate">
+                      {f.requester_email || '—'}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => respondToInvitation(f.id, 'accepted')}
+                    className="flex-1 px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 disabled:bg-green-400 text-sm"
+                    disabled={busy !== null}
+                  >
+                    {busy === f.id ? 'Traitement...' : 'Accepter'}
+                  </button>
+                  <button
+                    onClick={() => respondToInvitation(f.id, 'refused')}
+                    className="flex-1 px-3 py-2 rounded border border-red-300 text-red-700 hover:bg-red-50 dark:border-red-900/50 dark:text-red-200 dark:hover:bg-red-900/20 disabled:opacity-50 text-sm"
+                    disabled={busy !== null}
+                  >
+                    {busy === f.id ? 'Traitement...' : 'Refuser'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )
