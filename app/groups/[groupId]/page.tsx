@@ -91,166 +91,122 @@ function SleepPhasesChart({
 }: { 
   membersPhases: MemberSleepPhases[]
 }) {
-  // Générer les dates des 7 derniers jours
-  const dates: string[] = []
-  for (let i = 0; i < 7; i++) {
-    const date = new Date()
-    date.setDate(date.getDate() - i)
-    dates.push(date.toISOString().split('T')[0])
-  }
-  dates.sort((a, b) => b.localeCompare(a))
+  // Générer uniquement la date d'aujourd'hui
+  const today = new Date()
+  const todayStr = today.toISOString().split('T')[0]
 
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr)
-    return date.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' })
-  }
-
-  // Trouver la durée maximale pour normaliser la largeur des barres
-  let maxDuration = 0
-  membersPhases.forEach(member => {
-    member.sleepData.forEach(day => {
-      if (day.totalDuration > maxDuration) {
-        maxDuration = day.totalDuration
-      }
-    })
-  })
-  
-  // Si aucune donnée, utiliser 8 heures par défaut
-  if (maxDuration === 0) {
-    maxDuration = 8 * 3600 // 8 heures en secondes
+    return date.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })
   }
 
   return (
     <div className="border rounded-lg p-6 bg-white dark:bg-gray-900">
-      <h2 className="text-xl font-bold mb-4">Phases de sommeil (7 derniers jours)</h2>
-      <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-        Comparaison des phases de sommeil par personne. Chaque barre représente une nuit de sommeil.
-      </p>
-
-      {/* Légende */}
-      <div className="mb-6 flex flex-wrap gap-4 text-sm">
-        {[
-          { type: 'awake', label: 'Éveil' },
-          { type: 'light', label: 'Léger' },
-          { type: 'deep', label: 'Profond' },
-          { type: 'rem', label: 'REM' },
-        ].map(({ type, label }) => (
-          <div key={type} className="flex items-center gap-2">
-            <div
-              className="w-4 h-4 rounded border border-gray-300 dark:border-gray-600"
-              style={{ backgroundColor: getPhaseColor(type) }}
-            />
-            <span>{label}</span>
-          </div>
-        ))}
-      </div>
+      <h2 className="text-xl font-bold mb-4">Phases de sommeil</h2>
 
       {/* Graphiques par personne */}
       <div className="space-y-8">
-        {membersPhases.map(member => (
-          <div key={member.user_id} className="border-b dark:border-gray-700 pb-6 last:border-b-0 last:pb-0">
-            <h3 className="text-lg font-semibold mb-4">
-              {member.display_name || member.email || member.user_id}
-            </h3>
-            
-            {/* Graphiques par jour */}
-            <div className="space-y-3">
-              {dates.map(date => {
-                const dayData = member.sleepData.find(d => d.date === date)
-                if (!dayData || dayData.phases.length === 0) {
-                  return (
-                    <div key={date} className="flex items-center gap-4">
-                      <div className="w-32 text-sm text-gray-500 dark:text-gray-400">
-                        {formatDate(date)}
-                      </div>
-                      <div className="flex-1 text-sm text-gray-400 dark:text-gray-600">
-                        Aucune donnée
-                      </div>
-                    </div>
-                  )
-                }
-
-                const totalDuration = dayData.totalDuration
-                const phases = dayData.phases // Phases dans l'ordre chronologique
-                
-                // Calculer la somme par type pour la légende
-                const phasesByType: Record<string, number> = {
-                  awake: 0,
-                  light: 0,
-                  deep: 0,
-                  rem: 0,
-                }
-                phases.forEach(phase => {
-                  const type = phase.type.toLowerCase()
-                  if (phasesByType.hasOwnProperty(type)) {
-                    phasesByType[type] += phase.duration
-                  }
-                })
-
-                return (
-                  <div key={date} className="flex items-center gap-4">
-                    <div className="w-32 text-sm text-gray-700 dark:text-gray-300">
-                      {formatDate(date)}
-                    </div>
-                    <div className="flex-1 relative">
-                      {/* Barre de progression - phases dans l'ordre chronologique */}
-                      <div className="h-10 bg-gray-200 dark:bg-gray-700 rounded overflow-hidden flex relative">
-                        {phases.map((phase, index) => {
-                          const duration = phase.duration
-                          const percentageOfMax = maxDuration > 0 ? (duration / maxDuration) * 100 : 0
-                          const percentageOfTotal = totalDuration > 0 ? (duration / totalDuration) * 100 : 0
-                          
-                          if (duration === 0) return null
-                          
-                          return (
-                            <div
-                              key={index}
-                              className="h-full flex items-center justify-center text-xs font-medium text-white relative"
-                              style={{
-                                width: `${percentageOfMax}%`,
-                                backgroundColor: getPhaseColor(phase.type),
-                                minWidth: duration > 0 ? '2px' : '0',
-                              }}
-                              title={`${phase.type}: ${formatDuration(duration)} (${percentageOfTotal.toFixed(1)}% de la nuit)`}
-                            >
-                              {percentageOfMax > 5 && (
-                                <span className="text-[10px] px-1 truncate">
-                                  {formatDuration(duration)}
-                                </span>
-                              )}
-                            </div>
-                          )
-                        })}
-                      </div>
-                      {/* Durée totale et pourcentage */}
-                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 flex items-center gap-2">
-                        <span>Total: {formatDuration(totalDuration)}</span>
-                        <span className="text-gray-400 dark:text-gray-600">
-                          ({((totalDuration / maxDuration) * 100).toFixed(0)}% de la durée max)
-                        </span>
-                      </div>
-                    </div>
-                    {/* Détails des phases - somme par type */}
-                    <div className="w-48 text-xs text-gray-600 dark:text-gray-400">
-                      {Object.entries(phasesByType)
-                        .filter(([_, duration]) => duration > 0)
-                        .map(([type, duration]) => (
-                          <div key={type} className="flex items-center gap-1">
-                            <div
-                              className="w-2 h-2 rounded"
-                              style={{ backgroundColor: getPhaseColor(type) }}
-                            />
-                            <span className="capitalize">{type}:</span>
-                            <span className="font-medium">{formatDuration(duration)}</span>
-                          </div>
-                        ))}
-                    </div>
+        {membersPhases.map(member => {
+          const dayData = member.sleepData.find(d => d.date === todayStr)
+          
+          if (!dayData || dayData.phases.length === 0) {
+            return (
+              <div key={member.user_id} className="border-b dark:border-gray-700 pb-6 last:border-b-0 last:pb-0">
+                <h3 className="text-lg font-semibold mb-4">
+                  {member.display_name || member.email || member.user_id}
+                </h3>
+                <div className="flex items-center gap-4">
+                  <div className="w-32 text-sm text-gray-500 dark:text-gray-400">
+                    {formatDate(todayStr)}
                   </div>
-                )
-              })}
+                  <div className="flex-1 text-sm text-gray-400 dark:text-gray-600">
+                    Aucune donnée
+                  </div>
+                </div>
+              </div>
+            )
+          }
+
+          const totalDuration = dayData.totalDuration
+          const phases = dayData.phases // Phases dans l'ordre chronologique
+          
+          // Calculer la somme par type pour la légende
+          const phasesByType: Record<string, number> = {
+            awake: 0,
+            light: 0,
+            deep: 0,
+            rem: 0,
+          }
+          phases.forEach(phase => {
+            const type = phase.type.toLowerCase()
+            if (phasesByType.hasOwnProperty(type)) {
+              phasesByType[type] += phase.duration
+            }
+          })
+
+          return (
+            <div key={member.user_id} className="border-b dark:border-gray-700 pb-6 last:border-b-0 last:pb-0">
+              <h3 className="text-lg font-semibold mb-4">
+                {member.display_name || member.email || member.user_id}
+              </h3>
+              
+              <div className="flex items-center gap-4">
+                <div className="w-32 text-sm text-gray-700 dark:text-gray-300">
+                  {formatDate(todayStr)}
+                </div>
+                <div className="flex-1 relative">
+                  {/* Barre de progression - phases dans l'ordre chronologique */}
+                  <div className="h-10 bg-gray-200 dark:bg-gray-700 rounded overflow-hidden flex relative">
+                    {phases.map((phase, index) => {
+                      const duration = phase.duration
+                      const percentageOfTotal = totalDuration > 0 ? (duration / totalDuration) * 100 : 0
+                      
+                      if (duration === 0) return null
+                      
+                      return (
+                        <div
+                          key={index}
+                          className="h-full flex items-center justify-center text-xs font-medium text-white relative"
+                          style={{
+                            width: `${percentageOfTotal}%`,
+                            backgroundColor: getPhaseColor(phase.type),
+                            minWidth: duration > 0 ? '2px' : '0',
+                          }}
+                          title={`${phase.type}: ${formatDuration(duration)} (${percentageOfTotal.toFixed(1)}% de la nuit)`}
+                        >
+                          {percentageOfTotal > 5 && (
+                            <span className="text-[10px] px-1 truncate">
+                              {formatDuration(duration)}
+                            </span>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                  {/* Durée totale */}
+                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    <span>Total: {formatDuration(totalDuration)}</span>
+                  </div>
+                </div>
+                {/* Détails des phases - somme par type */}
+                <div className="w-48 text-xs text-gray-600 dark:text-gray-400">
+                  {Object.entries(phasesByType)
+                    .filter(([_, duration]) => duration > 0)
+                    .map(([type, duration]) => (
+                      <div key={type} className="flex items-center gap-1">
+                        <div
+                          className="w-2 h-2 rounded"
+                          style={{ backgroundColor: getPhaseColor(type) }}
+                        />
+                        <span className="capitalize">{type}:</span>
+                        <span className="font-medium">{formatDuration(duration)}</span>
+                      </div>
+                    ))}
+                </div>
+              </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )
