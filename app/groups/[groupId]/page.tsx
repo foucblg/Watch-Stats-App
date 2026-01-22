@@ -120,25 +120,6 @@ function SleepPhasesChart({
     maxDuration = 8 * 3600 // 8 heures en secondes
   }
 
-  // Organiser les phases par type pour chaque jour
-  const organizePhasesByType = (phases: SleepPhase[]) => {
-    const byType: Record<string, number> = {
-      awake: 0,
-      light: 0,
-      deep: 0,
-      rem: 0,
-    }
-    
-    phases.forEach(phase => {
-      const type = phase.type.toLowerCase()
-      if (byType.hasOwnProperty(type)) {
-        byType[type] += phase.duration
-      }
-    })
-    
-    return byType
-  }
-
   return (
     <div className="border rounded-lg p-6 bg-white dark:bg-gray-900">
       <h2 className="text-xl font-bold mb-4">Phases de sommeil (7 derniers jours)</h2>
@@ -189,8 +170,22 @@ function SleepPhasesChart({
                   )
                 }
 
-                const phasesByType = organizePhasesByType(dayData.phases)
                 const totalDuration = dayData.totalDuration
+                const phases = dayData.phases // Phases dans l'ordre chronologique
+                
+                // Calculer la somme par type pour la légende
+                const phasesByType: Record<string, number> = {
+                  awake: 0,
+                  light: 0,
+                  deep: 0,
+                  rem: 0,
+                }
+                phases.forEach(phase => {
+                  const type = phase.type.toLowerCase()
+                  if (phasesByType.hasOwnProperty(type)) {
+                    phasesByType[type] += phase.duration
+                  }
+                })
 
                 return (
                   <div key={date} className="flex items-center gap-4">
@@ -198,10 +193,10 @@ function SleepPhasesChart({
                       {formatDate(date)}
                     </div>
                     <div className="flex-1 relative">
-                      {/* Barre de progression - normalisée par rapport à maxDuration pour comparaison */}
+                      {/* Barre de progression - phases dans l'ordre chronologique */}
                       <div className="h-10 bg-gray-200 dark:bg-gray-700 rounded overflow-hidden flex relative">
-                        {['awake', 'light', 'deep', 'rem'].map(phaseType => {
-                          const duration = phasesByType[phaseType] || 0
+                        {phases.map((phase, index) => {
+                          const duration = phase.duration
                           const percentageOfMax = maxDuration > 0 ? (duration / maxDuration) * 100 : 0
                           const percentageOfTotal = totalDuration > 0 ? (duration / totalDuration) * 100 : 0
                           
@@ -209,14 +204,14 @@ function SleepPhasesChart({
                           
                           return (
                             <div
-                              key={phaseType}
+                              key={index}
                               className="h-full flex items-center justify-center text-xs font-medium text-white relative"
                               style={{
                                 width: `${percentageOfMax}%`,
-                                backgroundColor: getPhaseColor(phaseType),
+                                backgroundColor: getPhaseColor(phase.type),
                                 minWidth: duration > 0 ? '2px' : '0',
                               }}
-                              title={`${phaseType}: ${formatDuration(duration)} (${percentageOfTotal.toFixed(1)}% de la nuit)`}
+                              title={`${phase.type}: ${formatDuration(duration)} (${percentageOfTotal.toFixed(1)}% de la nuit)`}
                             >
                               {percentageOfMax > 5 && (
                                 <span className="text-[10px] px-1 truncate">
@@ -235,7 +230,7 @@ function SleepPhasesChart({
                         </span>
                       </div>
                     </div>
-                    {/* Détails des phases */}
+                    {/* Détails des phases - somme par type */}
                     <div className="w-48 text-xs text-gray-600 dark:text-gray-400">
                       {Object.entries(phasesByType)
                         .filter(([_, duration]) => duration > 0)
@@ -298,13 +293,14 @@ function ContributionGrid({
     }
   })
   
-  // Générer toutes les dates de l'année
-  const startOfYear = new Date(new Date().getFullYear(), 0, 1)
-  const today = new Date()
+  // Générer toutes les dates de l'année (du 1er janvier au 31 décembre)
+  const year = new Date().getFullYear()
+  const startOfYear = new Date(year, 0, 1)
+  const endOfYear = new Date(year, 11, 31)
   const dates: string[] = []
   
   const currentDate = new Date(startOfYear)
-  while (currentDate <= today) {
+  while (currentDate <= endOfYear) {
     dates.push(currentDate.toISOString().split('T')[0])
     currentDate.setDate(currentDate.getDate() + 1)
   }

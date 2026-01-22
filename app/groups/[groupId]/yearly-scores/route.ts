@@ -94,10 +94,13 @@ export async function GET(
     return json({ scores: [] })
   }
 
-  // Calculer la date du début de l'année (1er janvier de l'année en cours)
+  // Calculer les dates du début et de la fin de l'année (1er janvier au 31 décembre de l'année en cours)
   const now = new Date()
-  const startOfYear = new Date(now.getFullYear(), 0, 1)
+  const year = now.getFullYear()
+  const startOfYear = new Date(year, 0, 1)
+  const endOfYear = new Date(year, 11, 31)
   const startOfYearStr = startOfYear.toISOString().split("T")[0]
+  const endOfYearStr = endOfYear.toISOString().split("T")[0]
 
   // Récupérer les scores de sommeil de toute l'année pour tous les membres
   const { data: sleepData, error: sleepError } = await supabase
@@ -105,6 +108,7 @@ export async function GET(
     .select("local_user_id, date, score")
     .in("local_user_id", userIds)
     .gte("date", startOfYearStr)
+    .lte("date", endOfYearStr)
     .order("date", { ascending: true })
 
   if (sleepError) {
@@ -114,10 +118,9 @@ export async function GET(
   // Organiser les données par date et utilisateur
   const scoresByDate: Map<string, YearlyScore[]> = new Map()
 
-  // Initialiser toutes les dates de l'année
-  const today = new Date()
+  // Initialiser toutes les dates de l'année complète (du 1er janvier au 31 décembre)
   const currentDate = new Date(startOfYear)
-  while (currentDate <= today) {
+  while (currentDate <= endOfYear) {
     const dateStr = currentDate.toISOString().split("T")[0]
     scoresByDate.set(dateStr, userIds.map(userId => ({
       date: dateStr,
