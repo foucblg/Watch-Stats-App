@@ -93,8 +93,8 @@ export async function GET(req: Request): Promise<Response> {
       const { data: requester, error: requesterError } = await supabaseAdmin.auth.admin.getUserById(f.requester_id)
       if (requesterError || !requester) continue
 
-      const email = requester.email || null
-      const displayName = ((requester.user_metadata as any)?.display_name ?? null) as string | null
+      const email = requester.user.email || null
+      const displayName = ((requester.user.user_metadata as any)?.display_name ?? null) as string | null
 
       pendingFriendships.push({
         id: String(f.id),
