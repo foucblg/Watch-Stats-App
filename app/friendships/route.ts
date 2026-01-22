@@ -103,10 +103,10 @@ export async function GET(req: Request): Promise<Response> {
   for (const friendId of friendIds) {
     try {
       const { data: friend, error: friendError } = await supabaseAdmin.auth.admin.getUserById(friendId)
-      if (friendError || !friend) continue
+      if (friendError || !friend || !friend.user) continue
 
-      const email = friend.email || null
-      const displayName = ((friend.user_metadata as any)?.display_name ?? null) as string | null
+      const email = friend.user.email || null
+      const displayName = ((friend.user.user_metadata as any)?.display_name ?? null) as string | null
 
       friends.push({
         id: friendId,
