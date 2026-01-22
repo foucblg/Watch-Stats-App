@@ -22,9 +22,9 @@ export default function Home() {
       {sleep.map((s) => (
         <div key={s.summary_id} className="border p-3 mb-2 rounded">
           <div>Date: {s.date}</div>
-          <div>Total: {Math.round(s.total_sleep / 3600)} h</div>
-          <div>Deep: {Math.round(s.deep_sleep / 60)} min</div>
-          <div>REM: {Math.round(s.rem_sleep / 60)} min</div>
+          <div>Total: {Math.round((s.total_sleep ?? 0) / 3600)} h</div>
+          <div>Deep: {Math.round((s.deep_sleep ?? 0) / 60)} min</div>
+          <div>REM: {Math.round((s.rem_sleep ?? 0) / 60)} min</div>
         </div>
       ))}
     </main>
