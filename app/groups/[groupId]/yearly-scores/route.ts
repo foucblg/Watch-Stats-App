@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js"
+import type { SleepScoreRow } from "@/lib/types/sleep"
 
 function json(data: unknown, init?: ResponseInit) {
   return Response.json(data, {
@@ -131,7 +132,7 @@ export async function GET(
   }
 
   // Remplir avec les données réelles
-  ;(sleepData ?? []).forEach((s: any) => {
+  ;(sleepData ?? []).forEach((s: SleepScoreRow) => {
     if (s.date && s.local_user_id) {
       const existing = scoresByDate.get(s.date)
       if (existing) {

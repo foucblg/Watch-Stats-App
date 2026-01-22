@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js"
+import type { SleepPhasesRow } from "@/lib/types/sleep"
 
 function json(data: unknown, init?: ResponseInit) {
   return Response.json(data, {
@@ -176,7 +177,7 @@ export async function GET(
   // Organiser les données par utilisateur et par date
   const membersPhases: MemberSleepPhases[] = userIds.map((userId) => {
     const userInfo = usersMap.get(userId) || { email: null, display_name: null }
-    const userSleepData = (sleepData ?? []).filter((s: any) => s.local_user_id === userId)
+    const userSleepData = (sleepData ?? []).filter((s: SleepPhasesRow) => s.local_user_id === userId)
 
     // Créer un Map pour organiser par date
     const sleepByDate = new Map<string, { phases: SleepPhase[]; totalDuration: number }>()
@@ -190,7 +191,7 @@ export async function GET(
     }
 
     // Remplir avec les données réelles
-    userSleepData.forEach((s: any) => {
+    userSleepData.forEach((s: SleepPhasesRow) => {
       if (s.date && s.phase_type && s.phase_duration) {
         const phaseTypes = Array.isArray(s.phase_type) ? s.phase_type : []
         const phaseDurations = Array.isArray(s.phase_duration) ? s.phase_duration : []

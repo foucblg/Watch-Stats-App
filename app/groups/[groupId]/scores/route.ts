@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js"
+import type { SleepScoreRow } from "@/lib/types/sleep"
 
 function json(data: unknown, init?: ResponseInit) {
   return Response.json(data, {
@@ -174,7 +175,7 @@ export async function GET(
   // Organiser les données par utilisateur
   const membersScores: MemberScore[] = userIds.map((userId) => {
     const userInfo = usersMap.get(userId) || { email: null, display_name: null }
-    const userSleepData = (sleepData ?? []).filter((s: any) => s.local_user_id === userId)
+    const userSleepData = (sleepData ?? []).filter((s: SleepScoreRow) => s.local_user_id === userId)
 
     // Créer un tableau avec les 7 derniers jours
     const scoresByDate = new Map<string, number | null>()
@@ -186,7 +187,7 @@ export async function GET(
     }
 
     // Remplir avec les données réelles
-    userSleepData.forEach((s: any) => {
+    userSleepData.forEach((s: SleepScoreRow) => {
       if (s.date) {
         scoresByDate.set(s.date, s.score)
       }
