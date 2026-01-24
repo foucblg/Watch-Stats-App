@@ -91,9 +91,12 @@ function SleepPhasesChart({
 }: { 
   membersPhases: MemberSleepPhases[]
 }) {
-  // Générer uniquement la date d'aujourd'hui
+  // Générer la date d'aujourd'hui par défaut
   const today = new Date()
   const todayStr = today.toISOString().split('T')[0]
+  
+  // État pour la date sélectionnée
+  const [selectedDate, setSelectedDate] = useState<string>(todayStr)
 
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr)
@@ -102,12 +105,20 @@ function SleepPhasesChart({
 
   return (
     <div className="border rounded-lg p-6 bg-white dark:bg-gray-900">
-      <h2 className="text-xl font-bold mb-4">Phases de sommeil</h2>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-xl font-bold">Phases de sommeil</h2>
+        <input
+          type="date"
+          value={selectedDate}
+          onChange={(e) => setSelectedDate(e.target.value)}
+          className="px-3 py-2 border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-gray-200"
+        />
+      </div>
 
       {/* Graphiques par personne */}
       <div className="space-y-8">
         {membersPhases.map(member => {
-          const dayData = member.sleepData.find(d => d.date === todayStr)
+          const dayData = member.sleepData.find(d => d.date === selectedDate)
           
           if (!dayData || dayData.phases.length === 0) {
             return (
@@ -117,7 +128,7 @@ function SleepPhasesChart({
                 </h3>
                 <div className="flex items-center gap-4">
                   <div className="w-32 text-sm text-gray-500 dark:text-gray-400">
-                    {formatDate(todayStr)}
+                    {formatDate(selectedDate)}
                   </div>
                   <div className="flex-1 text-sm text-gray-400 dark:text-gray-600">
                     Aucune donnée
@@ -152,7 +163,7 @@ function SleepPhasesChart({
               
               <div className="flex items-center gap-4">
                 <div className="w-32 text-sm text-gray-700 dark:text-gray-300">
-                  {formatDate(todayStr)}
+                  {formatDate(selectedDate)}
                 </div>
                 <div className="flex-1 relative">
                   {/* Barre de progression - phases dans l'ordre chronologique */}
