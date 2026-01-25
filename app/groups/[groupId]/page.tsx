@@ -41,6 +41,12 @@ type MemberSleepPhases = {
   }>
 }
 
+type SearchUser = {
+  id: string
+  email: string | null
+  display_name: string | null
+}
+
 // Générer une couleur unique pour chaque utilisateur basée sur son ID
 function getUserColor(userId: string, members: MemberScore[]): string {
   const index = members.findIndex(m => m.user_id === userId)
@@ -436,6 +442,286 @@ function ContributionGrid({
   )
 }
 
+// Modal pour ajouter des membres au groupe
+function AddMembersModal(props: {
+  open: boolean
+  onClose: () => void
+  onAdded: () => void
+  groupId: string
+  existingMemberIds: string[]
+}) {
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<SearchUser[]>([])
+  const [selected, setSelected] = useState<SearchUser[]>([])
+  const [friends, setFriends] = useState<SearchUser[]>([])
+  const [busy, setBusy] = useState<null | 'search' | 'add' | 'loadFriends'>(null)
+  const [message, setMessage] = useState('')
+  const [modalError, setModalError] = useState('')
+
+  useEffect(() => {
+    if (props.open) {
+      setQuery('')
+      setResults([])
+      setSelected([])
+      setBusy(null)
+      setMessage('')
+      setModalError('')
+      loadFriends()
+    }
+  }, [props.open])
+
+  async function loadFriends() {
+    setBusy('loadFriends')
+    try {
+      const { data: sessionData } = await supabase.auth.getSession()
+      const token = sessionData.session?.access_token
+      if (!token) throw new Error('Non connecté.')
+
+      const res = await fetch('/friendships', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(body?.error || `Erreur API (${res.status})`)
+
+      const friendsList = Array.isArray(body?.friends) ? body.friends : []
+      // Filtrer pour exclure les membres déjà dans le groupe
+      const existingIds = new Set(props.existingMemberIds)
+      const filteredFriends = friendsList
+        .filter((f: any) => !existingIds.has(f.id))
+        .map((f: any) => ({
+          id: f.id,
+          email: f.email,
+          display_name: f.display_name,
+        }))
+      setFriends(filteredFriends)
+    } catch (e: any) {
+      setModalError(e?.message || 'Impossible de charger la liste des amis.')
+      setFriends([])
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  useEffect(() => {
+    if (!props.open) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') props.onClose()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [props.open, props.onClose])
+
+  useEffect(() => {
+    if (!props.open) return
+    const q = query.trim()
+    if (q.length < 2) {
+      setResults([])
+      return
+    }
+
+    const t = window.setTimeout(async () => {
+      setBusy('search')
+      setModalError('')
+      try {
+        const { data: sessionData } = await supabase.auth.getSession()
+        const token = sessionData.session?.access_token
+        if (!token) throw new Error('Non connecté.')
+
+        const res = await fetch(`/users/search?q=${encodeURIComponent(q)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        const body = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(body?.error || `Erreur API (${res.status})`)
+
+        const users = Array.isArray(body?.users) ? body.users : []
+        // Filtrer pour ne garder que les amis qui ne sont pas déjà dans le groupe
+        const friendIds = new Set(friends.map(f => f.id))
+        const existingIds = new Set(props.existingMemberIds)
+        const filteredUsers = users.filter(
+          (u: SearchUser) => friendIds.has(u.id) && !existingIds.has(u.id)
+        )
+        setResults(filteredUsers)
+      } catch (e: any) {
+        setModalError(e?.message || 'Impossible de rechercher des utilisateurs.')
+        setResults([])
+      } finally {
+        setBusy(null)
+      }
+    }, 300)
+
+    return () => window.clearTimeout(t)
+  }, [props.open, query, friends, props.existingMemberIds])
+
+  function addUser(u: SearchUser) {
+    if (selected.some(s => s.id === u.id)) return
+    setSelected(prev => [...prev, u])
+  }
+
+  function removeUser(id: string) {
+    setSelected(prev => prev.filter(u => u.id !== id))
+  }
+
+  async function addMembers() {
+    setBusy('add')
+    setModalError('')
+    setMessage('')
+    try {
+      if (selected.length === 0) {
+        throw new Error('Veuillez sélectionner au moins un membre à ajouter.')
+      }
+
+      const { data: sessionData } = await supabase.auth.getSession()
+      const token = sessionData.session?.access_token
+      if (!token) throw new Error('Non connecté.')
+
+      const res = await fetch(`/groups/${props.groupId}/members`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'content-type': 'application/json; charset=utf-8',
+        },
+        body: JSON.stringify({
+          member_user_ids: selected.map(u => u.id),
+        }),
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(body?.error || `Erreur API (${res.status})`)
+
+      setMessage(`${body.added_count || selected.length} membre(s) ajouté(s).`)
+      setTimeout(() => {
+        props.onAdded()
+        props.onClose()
+      }, 1000)
+    } catch (e: any) {
+      setModalError(e?.message || 'Impossible d\'ajouter les membres.')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  if (!props.open) return null
+
+  const canAdd = selected.length > 0 && busy === null
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
+      <button className="absolute inset-0 bg-black/40" aria-label="Fermer" onClick={props.onClose} />
+
+      <div className="relative w-full max-w-2xl mx-4 rounded-2xl bg-white dark:bg-gray-900 border dark:border-gray-800 shadow-xl p-6">
+        <div className="flex items-start justify-between gap-4 mb-4">
+          <div>
+            <div className="text-lg font-semibold">Ajouter des membres</div>
+            <div className="text-sm text-gray-600 dark:text-gray-300">
+              Sélectionnez des amis à ajouter au groupe.
+            </div>
+          </div>
+          <button onClick={props.onClose} className="px-3 py-2 rounded border hover:bg-gray-50 dark:hover:bg-gray-800">
+            Fermer
+          </button>
+        </div>
+
+        {modalError && (
+          <div className="mb-4 border border-red-200 bg-red-50 text-red-800 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-200 p-3 rounded">
+            {modalError}
+          </div>
+        )}
+        {message && (
+          <div className="mb-4 border border-green-200 bg-green-50 text-green-800 dark:border-green-900/40 dark:bg-green-900/20 dark:text-green-200 p-3 rounded">
+            {message}
+          </div>
+        )}
+
+        <div className="grid gap-4">
+          <div className="border rounded-xl p-4">
+            <div className="font-semibold mb-2">Rechercher des amis</div>
+            <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+              Vous ne pouvez ajouter que vos amis dans un groupe.
+            </div>
+            <input
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="Rechercher par email ou display name…"
+              className="w-full px-3 py-2 rounded border bg-white dark:bg-gray-800 mb-3"
+              disabled={busy !== null}
+            />
+
+            {busy === 'search' || busy === 'loadFriends' ? (
+              <div className="text-sm text-gray-600 dark:text-gray-300">Recherche…</div>
+            ) : results.length === 0 ? (
+              <div className="text-sm text-gray-600 dark:text-gray-300">
+                {query.trim().length >= 2
+                  ? 'Aucun ami trouvé correspondant à votre recherche.'
+                  : 'Tapez au moins 2 caractères pour rechercher parmi vos amis.'}
+              </div>
+            ) : (
+              <div className="grid gap-2">
+                {results.map(u => {
+                  const already = selected.some(s => s.id === u.id)
+                  return (
+                    <div key={u.id} className="flex items-center justify-between gap-3 border rounded-lg p-3">
+                      <div className="min-w-0">
+                        <div className="font-medium truncate">{u.display_name || u.email || u.id}</div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                          {u.email || '—'} {u.display_name ? `· ${u.display_name}` : ''}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => addUser(u)}
+                        className="px-3 py-2 rounded border hover:bg-gray-50 dark:hover:bg-gray-800"
+                        disabled={busy !== null || already}
+                      >
+                        {already ? 'Ajouté' : 'Ajouter'}
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="border rounded-xl p-4">
+            <div className="font-semibold mb-2">Membres sélectionnés</div>
+            {selected.length === 0 ? (
+              <div className="text-sm text-gray-600 dark:text-gray-300">Aucun membre sélectionné.</div>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {selected.map(u => (
+                  <button
+                    key={u.id}
+                    onClick={() => removeUser(u.id)}
+                    className="text-sm px-3 py-2 rounded-full border hover:bg-gray-50 dark:hover:bg-gray-800"
+                    disabled={busy !== null}
+                    title="Retirer"
+                  >
+                    {u.display_name || u.email || u.id} ×
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center justify-end gap-2">
+            <button
+              onClick={props.onClose}
+              className="px-3 py-2 rounded border hover:bg-gray-50 dark:hover:bg-gray-800"
+              disabled={busy !== null}
+            >
+              Annuler
+            </button>
+            <button
+              onClick={addMembers}
+              className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:bg-blue-400"
+              disabled={!canAdd}
+            >
+              Ajouter les membres
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function GroupScoresPage() {
   const router = useRouter()
   const params = useParams()
@@ -449,6 +735,7 @@ export default function GroupScoresPage() {
   const [loadingYearly, setLoadingYearly] = useState(true)
   const [loadingPhases, setLoadingPhases] = useState(true)
   const [error, setError] = useState('')
+  const [addMembersModalOpen, setAddMembersModalOpen] = useState(false)
 
   useEffect(() => {
     if (!groupId) {
@@ -598,6 +885,30 @@ export default function GroupScoresPage() {
             Scores de sommeil des 7 derniers jours
           </p>
         </div>
+        {!loading && group && (
+          <button
+            onClick={() => setAddMembersModalOpen(true)}
+            className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 inline-flex items-center gap-2 text-sm"
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              aria-hidden="true"
+            >
+              <path
+                d="M12 5v14M5 12h14"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            Ajouter des membres
+          </button>
+        )}
       </div>
 
       {error && (
@@ -678,6 +989,34 @@ export default function GroupScoresPage() {
           </div>
         </div>
       )}
+
+      <AddMembersModal
+        open={addMembersModalOpen}
+        onClose={() => setAddMembersModalOpen(false)}
+        onAdded={() => {
+          // Recharger les données du groupe
+          const loadData = async () => {
+            try {
+              const { data: sessionData } = await supabase.auth.getSession()
+              const token = sessionData.session?.access_token
+              if (!token) return
+
+              const scoresRes = await fetch(`/groups/${groupId}/scores`, {
+                headers: { Authorization: `Bearer ${token}` },
+              })
+              const scoresBody = await scoresRes.json().catch(() => ({}))
+              if (scoresRes.ok) {
+                setMembers(Array.isArray(scoresBody?.members) ? scoresBody.members : [])
+              }
+            } catch (e) {
+              console.error('Erreur lors du rechargement:', e)
+            }
+          }
+          loadData()
+        }}
+        groupId={groupId}
+        existingMemberIds={members.map(m => m.user_id)}
+      />
     </main>
   )
 }
