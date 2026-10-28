@@ -10,6 +10,26 @@ function json(data: unknown, init?: ResponseInit) {
   })
 }
 
+// Garmin limite une demande de backfill à 90 jours.
+const BACKFILL_DAYS = 89
+
+/** Demande à Garmin de renvoyer les nuits passées. Ne bloque jamais la connexion. */
+async function requestSleepBackfill(accessToken: string): Promise<void> {
+  const end = Math.floor(Date.now() / 1000)
+  const start = end - BACKFILL_DAYS * 24 * 60 * 60
+  try {
+    const res = await fetch(
+      `https://apis.garmin.com/wellness-api/rest/backfill/sleeps?summaryStartTimeInSeconds=${start}&summaryEndTimeInSeconds=${end}`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    )
+    if (!res.ok) {
+      console.warn("Garmin sleep backfill refused:", res.status, await res.text())
+    }
+  } catch (e) {
+    console.warn("Garmin sleep backfill error:", e)
+  }
+}
+
 function getBearerToken(req: Request): string | null {
   const header = req.headers.get("authorization") ?? req.headers.get("Authorization")
   if (!header) return null
@@ -182,6 +202,10 @@ export async function POST(req: Request): Promise<Response> {
         return json({ error: "Erreur lors de l'insertion de la connexion Garmin." }, { status: 500 })
       }
     }
+
+    // Garmin ne pousse que les données synchronisées après la connexion :
+    // on demande l'historique, qui arrivera ensuite sur le webhook Sleeps.
+    await requestSleepBackfill(access_token)
 
     return json({ success: true })
   } catch (e: any) {
