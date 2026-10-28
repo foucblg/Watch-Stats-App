@@ -10,8 +10,8 @@ function json(data: unknown, init?: ResponseInit) {
   })
 }
 
-// Garmin limite une demande de backfill à 90 jours.
-const BACKFILL_DAYS = 89
+// Garmin refuse un début de backfill antérieur à ~30 jours (clé actuelle, constaté le 2026-10-28).
+const BACKFILL_DAYS = 29
 
 /** Demande à Garmin de renvoyer les nuits passées. Ne bloque jamais la connexion. */
 async function requestSleepBackfill(accessToken: string): Promise<void> {
