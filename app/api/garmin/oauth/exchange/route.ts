@@ -10,28 +10,60 @@ function json(data: unknown, init?: ResponseInit) {
   })
 }
 
+function getBearerToken(req: Request): string | null {
+  const header = req.headers.get("authorization") ?? req.headers.get("Authorization")
+  if (!header) return null
+
+  const match = header.match(/^Bearer\s+(.+)$/i)
+  return match?.[1]?.trim() || null
+}
+
 export async function POST(req: Request): Promise<Response> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
-  if (!url || !serviceRoleKey) {
+  if (!url || !anonKey || !serviceRoleKey) {
     return json(
       { error: "Configuration Supabase manquante." },
       { status: 500 },
     )
   }
 
-  let body: { code: string; code_verifier: string; local_user_id: string }
+  const token = getBearerToken(req)
+  if (!token) {
+    return json({ error: "Non autorisé: token Bearer manquant." }, { status: 401 })
+  }
+
+  // L'utilisateur lié à Garmin est celui du JWT, jamais celui envoyé dans le body
+  const supabaseUser = createClient(url, anonKey, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    global: { headers: { Authorization: `Bearer ${token}` } },
+  })
+  const {
+    data: { user },
+    error: userError,
+  } = await supabaseUser.auth.getUser(token)
+  if (userError || !user) {
+    return json({ error: "Non autorisé: token invalide ou expiré." }, { status: 401 })
+  }
+
+  let body: { code: string; code_verifier: string; local_user_id?: string }
   try {
     body = await req.json()
   } catch {
     return json({ error: "Body JSON invalide." }, { status: 400 })
   }
 
-  const { code, code_verifier, local_user_id } = body
+  const { code, code_verifier } = body
+  const local_user_id = user.id
 
-  if (!code || !code_verifier || !local_user_id) {
-    return json({ error: "Paramètres manquants (code, code_verifier, local_user_id)." }, { status: 400 })
+  if (!code || !code_verifier) {
+    return json({ error: "Paramètres manquants (code, code_verifier)." }, { status: 400 })
+  }
+
+  if (body.local_user_id && body.local_user_id !== local_user_id) {
+    return json({ error: "Le compte connecté ne correspond pas à la demande Garmin." }, { status: 403 })
   }
 
   // Vérifier les variables d'environnement Garmin
