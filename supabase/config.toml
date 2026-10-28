@@ -431,3 +431,6 @@ verify_jwt = false
 
 [functions.replay-garmin-logs]
 verify_jwt = true
+
+[functions.zeppSync]
+verify_jwt = false
