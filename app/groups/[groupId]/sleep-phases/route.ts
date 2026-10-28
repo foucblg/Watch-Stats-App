@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js"
-import type { SleepPhasesRow } from "@/lib/types/sleep"
+import type { SleepPhasesRow, SleepSource } from "@/lib/types/sleep"
 
 function json(data: unknown, init?: ResponseInit) {
   return Response.json(data, {
@@ -32,6 +32,7 @@ type MemberSleepPhases = {
     date: string
     phases: SleepPhase[]
     totalDuration: number // durée totale en secondes
+    source: SleepSource | null
   }>
 }
 
@@ -113,7 +114,7 @@ export async function GET(
   // Récupérer les données de sommeil avec les phases des 7 derniers jours
   const { data: sleepData, error: sleepError } = await supabase
     .from("sleep")
-    .select("local_user_id, date, phase_type, phase_duration")
+    .select("local_user_id, date, phase_type, phase_duration, source")
     .in("local_user_id", userIds)
     .gte("date", sevenDaysAgoStr)
     .order("date", { ascending: false })
@@ -180,14 +181,14 @@ export async function GET(
     const userSleepData = (sleepData ?? []).filter((s: SleepPhasesRow) => s.local_user_id === userId)
 
     // Créer un Map pour organiser par date
-    const sleepByDate = new Map<string, { phases: SleepPhase[]; totalDuration: number }>()
+    const sleepByDate = new Map<string, { phases: SleepPhase[]; totalDuration: number; source: SleepSource | null }>()
 
     // Initialiser les 7 derniers jours
     for (let i = 0; i < 7; i++) {
       const date = new Date()
       date.setDate(date.getDate() - i)
       const dateStr = date.toISOString().split("T")[0]
-      sleepByDate.set(dateStr, { phases: [], totalDuration: 0 })
+      sleepByDate.set(dateStr, { phases: [], totalDuration: 0, source: null })
     }
 
     // Remplir avec les données réelles
@@ -206,7 +207,7 @@ export async function GET(
           totalDuration += duration
         }
 
-        sleepByDate.set(s.date, { phases, totalDuration })
+        sleepByDate.set(s.date, { phases, totalDuration, source: s.source })
       }
     })
 
@@ -217,6 +218,7 @@ export async function GET(
         date,
         phases: data.phases,
         totalDuration: data.totalDuration,
+        source: data.source,
       }))
 
     return {

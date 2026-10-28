@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import type { SleepSource } from '@/lib/types/sleep'
+import { SourceTag, SourcesNote } from '@/components/DataSource'
 
 type MemberScore = {
   user_id: string
@@ -11,6 +13,7 @@ type MemberScore = {
   scores: Array<{
     date: string
     score: number | null
+    source: SleepSource | null
   }>
 }
 
@@ -23,6 +26,7 @@ type YearlyScore = {
   date: string
   user_id: string
   score: number | null
+  source: SleepSource | null
 }
 
 type SleepPhase = {
@@ -38,6 +42,7 @@ type MemberSleepPhases = {
     date: string
     phases: SleepPhase[]
     totalDuration: number
+    source: SleepSource | null
   }>
 }
 
@@ -112,7 +117,13 @@ function SleepPhasesChart({
   return (
     <div className="border rounded-lg p-6 bg-white dark:bg-gray-900">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-bold">Phases de sommeil</h2>
+        <div>
+          <h2 className="text-xl font-bold">Phases de sommeil</h2>
+          <SourcesNote
+            className="mt-1"
+            sources={membersPhases.map(m => m.sleepData.find(d => d.date === selectedDate)?.source)}
+          />
+        </div>
         <input
           type="date"
           value={selectedDate}
@@ -163,8 +174,9 @@ function SleepPhasesChart({
 
           return (
             <div key={member.user_id} className="border-b dark:border-gray-700 pb-6 last:border-b-0 last:pb-0">
-              <h3 className="text-lg font-semibold mb-4">
+              <h3 className="flex items-center gap-2 text-lg font-semibold mb-4">
                 {member.display_name || member.email || member.user_id}
+                <SourceTag source={dayData.source} />
               </h3>
               
               <div className="flex items-center gap-4">
@@ -342,6 +354,7 @@ function ContributionGrid({
   return (
     <div className="border rounded-lg p-6 bg-white dark:bg-gray-900">
       <h2 className="text-xl font-bold mb-4">Meilleurs scores de l'année</h2>
+      <SourcesNote sources={yearlyScores.map(s => s.source)} />
       <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
         Chaque carré représente un jour. La couleur indique qui a eu le meilleur score ce jour-là.
       </p>
@@ -937,6 +950,10 @@ export default function GroupScoresPage() {
           <div className="border rounded-lg overflow-hidden">
             <div className="p-4 bg-gray-50 dark:bg-gray-800 border-b dark:border-gray-700">
               <h2 className="text-lg font-semibold">Scores de la semaine</h2>
+              <SourcesNote
+                className="mt-1"
+                sources={members.flatMap(m => m.scores.map(s => s.source))}
+              />
             </div>
             <div className="overflow-x-auto">
               <table className="w-full border-collapse">
@@ -974,7 +991,10 @@ export default function GroupScoresPage() {
                         return (
                           <td key={date} className="text-center p-4">
                             {score !== null && score !== undefined ? (
-                              <div className="font-semibold text-lg">{score}</div>
+                              <div className="flex flex-col items-center gap-1">
+                                <div className="font-semibold text-lg">{score}</div>
+                                <SourceTag source={scoreData?.source} />
+                              </div>
                             ) : (
                               <div className="text-gray-400 dark:text-gray-600">—</div>
                             )}

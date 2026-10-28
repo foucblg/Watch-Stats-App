@@ -2,7 +2,10 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
+import type { SleepSource } from '@/lib/types/sleep'
+import { SourceTag, SourcesNote } from '@/components/DataSource'
 
 type Group = {
   id: string
@@ -30,6 +33,7 @@ type LeaderboardEntry = {
   display_name: string | null
   score: number | null
   date: string
+  source: SleepSource
 }
 
 export default function Home() {
@@ -291,6 +295,7 @@ export default function Home() {
       {/* Classement général */}
       <div className="mb-8 border rounded-xl p-6 bg-white dark:bg-gray-900">
         <h2 className="text-xl font-bold mb-4">Classement général - Meilleur score de la nuit</h2>
+        <SourcesNote sources={leaderboard.map(entry => entry.source)} />
         {leaderboardLoading ? (
           <div className="text-gray-600 dark:text-gray-300">Chargement du classement…</div>
         ) : leaderboard.length === 0 ? (
@@ -312,8 +317,11 @@ export default function Home() {
                     </div>
                   </div>
                 </div>
-                <div className="text-lg font-bold text-blue-600 dark:text-blue-400">
-                  {entry.score !== null ? entry.score.toFixed(1) : '—'}
+                <div className="flex items-center gap-2">
+                  <SourceTag source={entry.source} />
+                  <div className="text-lg font-bold text-blue-600 dark:text-blue-400">
+                    {entry.score !== null ? entry.score.toFixed(1) : '—'}
+                  </div>
                 </div>
               </div>
             ))}
@@ -733,7 +741,7 @@ function AccountModal(props: {
   }
 
   async function disconnectGarmin() {
-    if (!confirm('Êtes-vous sûr de vouloir déconnecter votre montre Garmin ?')) {
+    if (!confirm('Êtes-vous sûr de vouloir déconnecter votre compte Garmin Connect™ ?')) {
       return
     }
 
@@ -752,7 +760,7 @@ function AccountModal(props: {
       const body = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(body?.error || `Erreur API (${res.status})`)
 
-      setMessage('Montre Garmin déconnectée avec succès.')
+      setMessage('Compte Garmin Connect™ déconnecté avec succès.')
       setGarminConnected(false)
     } catch (e: any) {
       setModalError(e?.message || 'Impossible de déconnecter Garmin.')
@@ -935,7 +943,10 @@ function AccountModal(props: {
           </div>
 
           <div className="border rounded-xl p-4">
-            <div className="font-semibold mb-2">Montre Garmin</div>
+            <div className="flex items-center gap-2 font-semibold mb-2">
+              <Image src="/brand/garmin-connect-icon.png" alt="" width={24} height={24} className="rounded" />
+              Garmin Connect™
+            </div>
             {garminConnected ? (
               <div className="space-y-2">
                 <div className="text-sm text-green-600 dark:text-green-400">
@@ -964,7 +975,7 @@ function AccountModal(props: {
                 className="px-3 py-2 rounded border hover:bg-gray-50 dark:hover:bg-gray-800"
                 disabled={busy !== null}
               >
-                {busy === 'garmin' ? 'Connexion en cours...' : 'Connecter sa montre Garmin'}
+                {busy === 'garmin' ? 'Connexion en cours...' : 'Connecter mon compte Garmin Connect™'}
               </button>
             )}
           </div>

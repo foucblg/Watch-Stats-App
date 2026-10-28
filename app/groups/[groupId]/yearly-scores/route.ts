@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js"
-import type { SleepScoreRow } from "@/lib/types/sleep"
+import type { SleepScoreRow, SleepSource } from "@/lib/types/sleep"
 
 function json(data: unknown, init?: ResponseInit) {
   return Response.json(data, {
@@ -23,6 +23,7 @@ type YearlyScore = {
   date: string
   user_id: string
   score: number | null
+  source: SleepSource | null
 }
 
 export async function GET(
@@ -106,7 +107,7 @@ export async function GET(
   // Récupérer les scores de sommeil de toute l'année pour tous les membres
   const { data: sleepData, error: sleepError } = await supabase
     .from("sleep")
-    .select("local_user_id, date, score")
+    .select("local_user_id, date, score, source")
     .in("local_user_id", userIds)
     .gte("date", startOfYearStr)
     .lte("date", endOfYearStr)
@@ -127,6 +128,7 @@ export async function GET(
       date: dateStr,
       user_id: userId,
       score: null,
+      source: null,
     })))
     currentDate.setDate(currentDate.getDate() + 1)
   }
@@ -139,6 +141,7 @@ export async function GET(
         const userScore = existing.find(score => score.user_id === s.local_user_id)
         if (userScore) {
           userScore.score = s.score
+          userScore.source = s.source
         }
       }
     }

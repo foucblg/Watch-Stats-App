@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js"
+import type { SleepSource } from "@/lib/types/sleep"
 
 function json(data: unknown, init?: ResponseInit) {
   return Response.json(data, {
@@ -23,6 +24,7 @@ type LeaderboardEntry = {
   display_name: string | null
   score: number | null
   date: string
+  source: SleepSource
 }
 
 export async function GET(req: Request): Promise<Response> {
@@ -100,7 +102,7 @@ export async function GET(req: Request): Promise<Response> {
   // Récupérer tous les scores de sommeil d'aujourd'hui
   const { data: sleepData, error: sleepError } = await supabaseAdmin
     .from("sleep")
-    .select("local_user_id, date, score")
+    .select("local_user_id, date, score, source")
     .eq("date", todayStr)
     .not("score", "is", null)
     .order("score", { ascending: false })
@@ -170,6 +172,7 @@ export async function GET(req: Request): Promise<Response> {
       display_name: displayName,
       score: s.score,
       date: s.date,
+      source: s.source,
     }
   })
 

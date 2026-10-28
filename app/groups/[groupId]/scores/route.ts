@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js"
-import type { SleepScoreRow } from "@/lib/types/sleep"
+import type { SleepScoreRow, SleepSource } from "@/lib/types/sleep"
 
 function json(data: unknown, init?: ResponseInit) {
   return Response.json(data, {
@@ -26,6 +26,7 @@ type MemberScore = {
   scores: Array<{
     date: string
     score: number | null
+    source: SleepSource | null
   }>
 }
 
@@ -107,7 +108,7 @@ export async function GET(
   // Récupérer les scores de sommeil des 7 derniers jours pour tous les membres
   const { data: sleepData, error: sleepError } = await supabase
     .from("sleep")
-    .select("local_user_id, date, score")
+    .select("local_user_id, date, score, source")
     .in("local_user_id", userIds)
     .gte("date", sevenDaysAgoStr)
     .order("date", { ascending: false })
@@ -178,25 +179,25 @@ export async function GET(
     const userSleepData = (sleepData ?? []).filter((s: SleepScoreRow) => s.local_user_id === userId)
 
     // Créer un tableau avec les 7 derniers jours
-    const scoresByDate = new Map<string, number | null>()
+    const scoresByDate = new Map<string, { score: number | null; source: SleepSource | null }>()
     for (let i = 0; i < 7; i++) {
       const date = new Date()
       date.setDate(date.getDate() - i)
       const dateStr = date.toISOString().split("T")[0]
-      scoresByDate.set(dateStr, null)
+      scoresByDate.set(dateStr, { score: null, source: null })
     }
 
     // Remplir avec les données réelles
     userSleepData.forEach((s: SleepScoreRow) => {
       if (s.date) {
-        scoresByDate.set(s.date, s.score)
+        scoresByDate.set(s.date, { score: s.score, source: s.source })
       }
     })
 
     // Convertir en tableau trié par date (du plus récent au plus ancien)
     const scores = Array.from(scoresByDate.entries())
       .sort((a, b) => b[0].localeCompare(a[0]))
-      .map(([date, score]) => ({ date, score }))
+      .map(([date, { score, source }]) => ({ date, score, source }))
 
     return {
       user_id: userId,
