@@ -417,9 +417,6 @@ enabled = true
 
 # Webhooks externes (Garmin, montre Amazfit) : appelés sans JWT Supabase.
 # À garder explicite, sinon `supabase functions deploy` réactive verify_jwt.
-[functions.AmazfitWebhookDev]
-verify_jwt = false
-
 [functions.garminWebhookDev]
 verify_jwt = false
 
