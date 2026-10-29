@@ -96,9 +96,13 @@ export default function Home() {
       }
 
       try {
-        const res = await fetch('/groups', {
-          headers: { Authorization: `Bearer ${token}` },
-        })
+        // Les trois appels sont indépendants : on les lance en parallèle
+        const headers = { Authorization: `Bearer ${token}` }
+        const [res, pendingRes, leaderboardRes] = await Promise.all([
+          fetch('/groups', { headers }),
+          fetch('/friendships/pending', { headers }),
+          fetch('/leaderboard', { headers }),
+        ])
 
         const body = await res.json().catch(() => ({}))
         if (!res.ok) {
@@ -109,20 +113,14 @@ export default function Home() {
           setGroups(Array.isArray(body?.groups) ? body.groups : [])
         }
 
-        // Charger les invitations en attente
-        const pendingRes = await fetch('/friendships/pending', {
-          headers: { Authorization: `Bearer ${token}` },
-        })
+        // Invitations en attente
         const pendingBody = await pendingRes.json().catch(() => ({}))
         if (pendingRes.ok && !cancelled) {
           const friendships = Array.isArray(pendingBody?.friendships) ? pendingBody.friendships : []
           setPendingCount(friendships.length)
         }
 
-        // Charger le classement général
-        const leaderboardRes = await fetch('/leaderboard', {
-          headers: { Authorization: `Bearer ${token}` },
-        })
+        // Classement général
         const leaderboardBody = await leaderboardRes.json().catch(() => ({}))
         if (leaderboardRes.ok && !cancelled) {
           const entries = Array.isArray(leaderboardBody?.leaderboard) ? leaderboardBody.leaderboard : []

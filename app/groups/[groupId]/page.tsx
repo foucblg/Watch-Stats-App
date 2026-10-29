@@ -772,10 +772,32 @@ export default function GroupScoresPage() {
           return
         }
 
-        // Charger les informations du groupe
-        const groupsRes = await fetch('/groups', {
-          headers: { Authorization: `Bearer ${token}` },
-        })
+        // Les quatre appels sont indépendants : on les lance en parallèle.
+        // L'annuel et les phases sont facultatifs et s'affichent dès qu'ils arrivent.
+        const headers = { Authorization: `Bearer ${token}` }
+        const yearlyLoad = fetch(`/groups/${groupId}/yearly-scores`, { headers })
+          .then(async res => {
+            const yearlyBody = await res.json().catch(() => ({}))
+            if (res.ok && !cancelled) {
+              setYearlyScores(Array.isArray(yearlyBody?.scores) ? yearlyBody.scores : [])
+            }
+          })
+          .catch(() => {})
+          .finally(() => { if (!cancelled) setLoadingYearly(false) })
+        const phasesLoad = fetch(`/groups/${groupId}/sleep-phases`, { headers })
+          .then(async res => {
+            const phasesBody = await res.json().catch(() => ({}))
+            if (res.ok && !cancelled) {
+              setMembersPhases(Array.isArray(phasesBody?.members) ? phasesBody.members : [])
+            }
+          })
+          .catch(() => {})
+          .finally(() => { if (!cancelled) setLoadingPhases(false) })
+
+        const [groupsRes, scoresRes] = await Promise.all([
+          fetch('/groups', { headers }),
+          fetch(`/groups/${groupId}/scores`, { headers }),
+        ])
 
         const groupsBody = await groupsRes.json().catch(() => ({}))
         if (!groupsRes.ok) {
@@ -793,11 +815,6 @@ export default function GroupScoresPage() {
           setGroup(foundGroup)
         }
 
-        // Charger les scores
-        const scoresRes = await fetch(`/groups/${groupId}/scores`, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
-
         const scoresBody = await scoresRes.json().catch(() => ({}))
         if (!scoresRes.ok) {
           throw new Error(scoresBody?.error || `Erreur API (${scoresRes.status})`)
@@ -805,31 +822,10 @@ export default function GroupScoresPage() {
 
         if (!cancelled) {
           setMembers(Array.isArray(scoresBody?.members) ? scoresBody.members : [])
+          setLoading(false)
         }
-        
-        // Charger les scores de l'année
-        const yearlyRes = await fetch(`/groups/${groupId}/yearly-scores`, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
-        
-        const yearlyBody = await yearlyRes.json().catch(() => ({}))
-        if (yearlyRes.ok) {
-          if (!cancelled) {
-            setYearlyScores(Array.isArray(yearlyBody?.scores) ? yearlyBody.scores : [])
-          }
-        }
-        
-        // Charger les phases de sommeil
-        const phasesRes = await fetch(`/groups/${groupId}/sleep-phases`, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
-        
-        const phasesBody = await phasesRes.json().catch(() => ({}))
-        if (phasesRes.ok) {
-          if (!cancelled) {
-            setMembersPhases(Array.isArray(phasesBody?.members) ? phasesBody.members : [])
-          }
-        }
+
+        await Promise.all([yearlyLoad, phasesLoad])
       } catch (e: any) {
         if (!cancelled) {
           setError(e?.message || 'Impossible de charger les données.')
