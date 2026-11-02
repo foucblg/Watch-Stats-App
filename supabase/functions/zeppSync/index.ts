@@ -202,6 +202,17 @@ function decodeSummary(row: Record<string, unknown>): { slp?: ZeppSleep; tz?: nu
   }
 }
 
+/** Raison pour laquelle une journée Zepp n'a pas donné de nuit (renvoyée dans `skipped`). */
+function skipReason(row: Record<string, unknown>): string {
+  const summary = decodeSummary(row);
+  const slp = summary.slp;
+  if (!slp) return "pas de résumé sommeil";
+  if (!slp.ed) return "pas d'heure de réveil";
+  if (!slp.stage?.length) return "aucune phase";
+  const wake = new Date((slp.ed + (Number(summary.tz) || 0)) * 1000).toISOString();
+  return `réveil hors fenêtre (${wake.slice(0, 16).replace("T", " ")} locale)`;
+}
+
 /**
  * Transforme une journée Zepp en ligne sleep.
  * La ligne du jour J contient la nuit qui se termine le matin de J (comme le
@@ -343,6 +354,7 @@ Deno.serve(async (req) => {
     start.setUTCDate(start.getUTCDate() - days + 1);
 
     const rows: NonNullable<ReturnType<typeof toSleepRow>>[] = [];
+    const skipped: Record<string, string> = {};
     for (const [from, to] of chunks(start, end, 30)) {
       let res = await fetchBandData(cred, from, to);
       if (res.status === 401 && !relogged) {
@@ -361,6 +373,7 @@ Deno.serve(async (req) => {
         if (row && typeof row === "object") {
           const sleep = toSleepRow(localUserId, row);
           if (sleep) rows.push(sleep);
+          else skipped[String(row.date_time ?? "?")] = skipReason(row);
         }
       }
     }
@@ -393,6 +406,7 @@ Deno.serve(async (req) => {
       nights: rows.length,
       first: rows.map((r) => r.date).sort()[0] ?? null,
       last: rows.map((r) => r.date).sort().at(-1) ?? null,
+      skipped,
     });
   } catch (err) {
     const message = (err as Error).message;
