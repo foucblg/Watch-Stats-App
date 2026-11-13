@@ -12,11 +12,12 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* Site toujours en clair : les classes dark: ne s'appliquent qu'avec une classe .dark,
+   qu'on ne pose nulle part (au lieu de suivre le réglage sombre du système). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  color-scheme: light;
 }
 
 body {

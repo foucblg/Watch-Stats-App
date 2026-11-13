@@ -96,10 +96,13 @@ export async function GET(
     return json({ scores: [] })
   }
 
-  // Calculer les dates du début et de la fin de l'année (1er janvier au 31 décembre de l'année en cours)
+  // Du 1er janvier au 31 décembre de l'année en cours, en remontant d'au moins 90 jours
+  // pour que la période « 3 mois » des nuits gagnées soit complète en début d'année
   const now = new Date()
   const year = now.getFullYear()
-  const startOfYear = new Date(year, 0, 1)
+  const ninetyDaysAgo = new Date(now)
+  ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90)
+  const startOfYear = ninetyDaysAgo < new Date(year, 0, 1) ? ninetyDaysAgo : new Date(year, 0, 1)
   const endOfYear = new Date(year, 11, 31)
   const startOfYearStr = startOfYear.toISOString().split("T")[0]
   const endOfYearStr = endOfYear.toISOString().split("T")[0]

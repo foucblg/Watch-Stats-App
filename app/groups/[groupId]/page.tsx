@@ -52,405 +52,593 @@ type SearchUser = {
   display_name: string | null
 }
 
-// Générer une couleur unique pour chaque utilisateur basée sur son ID
-function getUserColor(userId: string, members: MemberScore[]): string {
-  const index = members.findIndex(m => m.user_id === userId)
-  if (index === -1) return '#e5e7eb'
-  
-  // Palette de couleurs vives et distinctes
-  const colors = [
-    '#3b82f6', // blue
-    '#ef4444', // red
-    '#10b981', // green
-    '#f59e0b', // amber
-    '#8b5cf6', // purple
-    '#ec4899', // pink
-    '#06b6d4', // cyan
-    '#f97316', // orange
-    '#6366f1', // indigo
-    '#14b8a6', // teal
-    '#84cc16', // lime
-    '#eab308', // yellow
-  ]
-  
-  return colors[index % colors.length]
-}
-
-// Couleurs pour les phases de sommeil
-function getPhaseColor(phaseType: string): string {
-  const colors: Record<string, string> = {
-    awake: '#ef4444', // red
-    light: '#fbbf24', // amber
-    deep: '#3b82f6', // blue
-    rem: '#8b5cf6', // purple
-  }
-  return colors[phaseType.toLowerCase()] || '#9ca3af' // gray par défaut
-}
+// Phases de sommeil, dans l'ordre d'affichage des barres
+const PHASES: Array<{ type: string; label: string; color: string }> = [
+  { type: 'deep', label: 'Profond', color: '#1e3a8a' },
+  { type: 'light', label: 'Léger', color: '#93c5fd' },
+  { type: 'rem', label: 'Paradoxal', color: '#8b5cf6' },
+  { type: 'awake', label: 'Éveil', color: '#f97316' },
+]
 
 function formatDuration(seconds: number): string {
   const hours = Math.floor(seconds / 3600)
   const minutes = Math.floor((seconds % 3600) / 60)
+
   if (hours > 0) {
     return `${hours}h${minutes > 0 ? ` ${minutes}min` : ''}`
   }
   return `${minutes}min`
 }
 
-// Composant de graphique des phases de sommeil
-function SleepPhasesChart({ 
-  membersPhases 
-}: { 
-  membersPhases: MemberSleepPhases[]
-}) {
-  // Générer la date d'aujourd'hui par défaut
-  const today = new Date()
-  const todayStr = today.toISOString().split('T')[0]
-  
-  // État pour la date sélectionnée
-  const [selectedDate, setSelectedDate] = useState<string>(todayStr)
+function memberName(m: { user_id: string; email: string | null; display_name: string | null }): string {
+  return m.display_name || m.email || m.user_id
+}
 
-  const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr)
-    return date.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })
-  }
+// Les dates (YYYY-MM-DD) sont en UTC, comme dans les routes API
+function formatDay(dateStr: string, options: Intl.DateTimeFormatOptions): string {
+  return new Date(`${dateStr}T00:00:00Z`).toLocaleDateString('fr-FR', { ...options, timeZone: 'UTC' })
+}
 
+function previousDay(dateStr: string): string {
+  const d = new Date(`${dateStr}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() - 1)
+  return d.toISOString().split('T')[0]
+}
+
+function PhasesLegend() {
   return (
-    <div className="border rounded-lg p-6 bg-white dark:bg-gray-900">
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h2 className="text-xl font-bold">Phases de sommeil</h2>
-          <SourcesNote
-            className="mt-1"
-            sources={membersPhases.map(m => m.sleepData.find(d => d.date === selectedDate)?.source)}
-          />
-        </div>
-        <input
-          type="date"
-          value={selectedDate}
-          onChange={(e) => setSelectedDate(e.target.value)}
-          className="px-3 py-2 border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-gray-200"
-        />
-      </div>
-
-      {/* Graphiques par personne */}
-      <div className="space-y-8">
-        {membersPhases.map(member => {
-          const dayData = member.sleepData.find(d => d.date === selectedDate)
-          
-          if (!dayData || dayData.phases.length === 0) {
-            return (
-              <div key={member.user_id} className="border-b dark:border-gray-700 pb-6 last:border-b-0 last:pb-0">
-                <h3 className="text-lg font-semibold mb-4">
-                  {member.display_name || member.email || member.user_id}
-                </h3>
-                <div className="flex items-center gap-4">
-                  <div className="w-32 text-sm text-gray-500 dark:text-gray-400">
-                    {formatDate(selectedDate)}
-                  </div>
-                  <div className="flex-1 text-sm text-gray-400 dark:text-gray-600">
-                    Aucune donnée
-                  </div>
-                </div>
-              </div>
-            )
-          }
-
-          const totalDuration = dayData.totalDuration
-          const phases = dayData.phases // Phases dans l'ordre chronologique
-          
-          // Calculer la somme par type pour la légende
-          const phasesByType: Record<string, number> = {
-            awake: 0,
-            light: 0,
-            deep: 0,
-            rem: 0,
-          }
-          phases.forEach(phase => {
-            const type = phase.type.toLowerCase()
-            if (phasesByType.hasOwnProperty(type)) {
-              phasesByType[type] += phase.duration
-            }
-          })
-
-          return (
-            <div key={member.user_id} className="border-b dark:border-gray-700 pb-6 last:border-b-0 last:pb-0">
-              <h3 className="flex items-center gap-2 text-lg font-semibold mb-4">
-                {member.display_name || member.email || member.user_id}
-                <SourceTag source={dayData.source} />
-              </h3>
-              
-              <div className="flex items-center gap-4">
-                <div className="w-32 text-sm text-gray-700 dark:text-gray-300">
-                  {formatDate(selectedDate)}
-                </div>
-                <div className="flex-1 relative">
-                  {/* Barre de progression - phases dans l'ordre chronologique */}
-                  <div className="h-10 bg-gray-200 dark:bg-gray-700 rounded overflow-hidden flex relative">
-                    {phases.map((phase, index) => {
-                      const duration = phase.duration
-                      const percentageOfTotal = totalDuration > 0 ? (duration / totalDuration) * 100 : 0
-                      
-                      if (duration === 0) return null
-                      
-                      return (
-                        <div
-                          key={index}
-                          className="h-full flex items-center justify-center text-xs font-medium text-white relative"
-                          style={{
-                            width: `${percentageOfTotal}%`,
-                            backgroundColor: getPhaseColor(phase.type),
-                            minWidth: duration > 0 ? '2px' : '0',
-                          }}
-                          title={`${phase.type}: ${formatDuration(duration)} (${percentageOfTotal.toFixed(1)}% de la nuit)`}
-                        >
-                          {percentageOfTotal > 5 && (
-                            <span className="text-[10px] px-1 truncate">
-                              {formatDuration(duration)}
-                            </span>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
-                  {/* Durée totale */}
-                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    <span>Total: {formatDuration(totalDuration)}</span>
-                  </div>
-                </div>
-                {/* Détails des phases - somme par type */}
-                <div className="w-48 text-xs text-gray-600 dark:text-gray-400">
-                  {Object.entries(phasesByType)
-                    .filter(([_, duration]) => duration > 0)
-                    .map(([type, duration]) => (
-                      <div key={type} className="flex items-center gap-1">
-                        <div
-                          className="w-2 h-2 rounded"
-                          style={{ backgroundColor: getPhaseColor(type) }}
-                        />
-                        <span className="capitalize">{type}:</span>
-                        <span className="font-medium">{formatDuration(duration)}</span>
-                      </div>
-                    ))}
-                </div>
-              </div>
-            </div>
-          )
-        })}
-      </div>
+    <div className="flex flex-wrap gap-3 text-xs text-gray-600 dark:text-gray-400">
+      {PHASES.map(p => (
+        <span key={p.type} className="inline-flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: p.color }} />
+          {p.label}
+        </span>
+      ))}
     </div>
   )
 }
 
-// Composant de grille de contributions
-function ContributionGrid({ 
-  yearlyScores, 
-  members 
-}: { 
-  yearlyScores: YearlyScore[]
+type NightRow = {
+  user_id: string
+  name: string
+  isMe: boolean
+  score: number | null
+  source: SleepSource | null
+  byType: Record<string, number>
+  total: number
+}
+
+// Nuit dernière : podium des trois premiers, puis les phases de chaque membre
+function LastNightPodium({
+  dates,
+  members,
+  membersPhases,
+  currentUserId,
+}: {
+  dates: string[] // du plus récent au plus ancien
   members: MemberScore[]
+  membersPhases: MemberSleepPhases[]
+  currentUserId: string | null
 }) {
-  // Organiser les scores par date
-  const scoresByDate = new Map<string, Map<string, number | null>>()
-  
-  yearlyScores.forEach(score => {
-    if (!scoresByDate.has(score.date)) {
-      scoresByDate.set(score.date, new Map())
+  const hasData = (date: string) =>
+    members.some(m => m.scores.some(s => s.date === date && s.score !== null)) ||
+    membersPhases.some(m => m.sleepData.some(d => d.date === date && d.phases.length > 0))
+
+  // Par défaut : la nuit la plus récente qui contient des données
+  const [index, setIndex] = useState(() => Math.max(0, dates.findIndex(hasData)))
+  const date = dates[index]
+
+  const rows: NightRow[] = members.map(member => {
+    const scoreData = member.scores.find(s => s.date === date)
+    const night = membersPhases.find(m => m.user_id === member.user_id)?.sleepData.find(d => d.date === date)
+    const byType: Record<string, number> = {}
+    let total = 0
+    for (const phase of night?.phases ?? []) {
+      const type = phase.type.toLowerCase()
+      byType[type] = (byType[type] ?? 0) + phase.duration
+      total += phase.duration
     }
-    scoresByDate.get(score.date)!.set(score.user_id, score.score)
-  })
-  
-  // Trouver le meilleur score pour chaque jour
-  const bestScoresByDate = new Map<string, { user_id: string; score: number }>()
-  
-  scoresByDate.forEach((userScores, date) => {
-    let bestUserId: string | null = null
-    let bestScore: number | null = null
-    
-    userScores.forEach((score, userId) => {
-      if (score !== null && (bestScore === null || score > bestScore)) {
-        bestScore = score
-        bestUserId = userId
-      }
-    })
-    
-    if (bestUserId && bestScore !== null) {
-      bestScoresByDate.set(date, { user_id: bestUserId, score: bestScore })
+    return {
+      user_id: member.user_id,
+      name: memberName(member),
+      isMe: member.user_id === currentUserId,
+      score: scoreData?.score ?? null,
+      source: scoreData?.source ?? night?.source ?? null,
+      byType,
+      total,
     }
   })
-  
-  // Générer toutes les dates de l'année (du 1er janvier au 31 décembre)
-  const year = new Date().getFullYear()
-  const startOfYear = new Date(year, 0, 1)
-  const endOfYear = new Date(year, 11, 31)
-  const dates: string[] = []
-  
-  const currentDate = new Date(startOfYear)
-  while (currentDate <= endOfYear) {
-    dates.push(currentDate.toISOString().split('T')[0])
-    currentDate.setDate(currentDate.getDate() + 1)
-  }
-  
-  // Organiser les dates par semaine (colonnes = semaines, lignes = jours de la semaine)
-  // getDay() retourne 0=dimanche, 1=lundi, ..., 6=samedi
-  // On veut lundi=0, mardi=1, ..., dimanche=6
-  const getDayOfWeek = (date: Date) => {
-    const day = date.getDay()
-    return day === 0 ? 6 : day - 1 // Convertir dimanche (0) en 6, lundi (1) en 0, etc.
-  }
-  
-  const weeks: string[][] = []
-  const firstDate = new Date(dates[0])
-  const firstDayOfWeek = getDayOfWeek(firstDate)
-  
-  // Créer un tableau pour chaque jour de la semaine (7 lignes)
-  const weekRows: string[][] = [[], [], [], [], [], [], []]
-  
-  // Remplir les jours manquants au début de la première semaine
-  for (let i = 0; i < firstDayOfWeek; i++) {
-    weekRows[i].push('')
-  }
-  
-  // Remplir avec les dates réelles
-  dates.forEach(date => {
-    const dateObj = new Date(date)
-    const dayOfWeek = getDayOfWeek(dateObj)
-    weekRows[dayOfWeek].push(date)
+
+  // Les membres avec un score d'abord (du meilleur au moins bon), puis ceux qui n'ont que des phases
+  rows.sort((a, b) => {
+    if (a.score !== null && b.score !== null) return b.score - a.score
+    if (a.score !== null) return -1
+    if (b.score !== null) return 1
+    return b.total - a.total
   })
-  
-  // Remplir les jours manquants à la fin de la dernière semaine
-  const lastDate = new Date(dates[dates.length - 1])
-  const lastDayOfWeek = getDayOfWeek(lastDate)
-  for (let i = lastDayOfWeek + 1; i < 7; i++) {
-    weekRows[i].push('')
-  }
-  
-  // Trouver le nombre maximum de semaines
-  const maxWeeks = Math.max(...weekRows.map(row => row.length))
-  
-  // Organiser en semaines (colonnes)
-  for (let weekIndex = 0; weekIndex < maxWeeks; weekIndex++) {
-    const week: string[] = []
-    for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
-      week.push(weekRows[dayIndex][weekIndex] || '')
-    }
-    weeks.push(week)
-  }
-  
-  const formatTooltipDate = (dateStr: string) => {
-    const date = new Date(dateStr)
-    return date.toLocaleDateString('fr-FR', { 
-      weekday: 'long', 
-      day: 'numeric', 
-      month: 'long',
-      year: 'numeric'
-    })
-  }
-  
-  const getMemberName = (userId: string) => {
-    const member = members.find(m => m.user_id === userId)
-    return member?.display_name || member?.email || userId
-  }
-  
+
+  const ranked = rows.filter(r => r.score !== null)
+  const maxTotal = Math.max(0, ...rows.map(r => r.total))
+
+  // Podium : 2e à gauche, 1er au centre, 3e à droite
+  const podium = [
+    { row: ranked[1], place: '2e', height: 'h-20', color: 'bg-indigo-100 text-indigo-950 dark:bg-indigo-900/60 dark:text-indigo-50' },
+    { row: ranked[0], place: '1er', height: 'h-28', color: 'bg-indigo-700 text-white' },
+    { row: ranked[2], place: '3e', height: 'h-14', color: 'bg-indigo-50 text-indigo-950 dark:bg-indigo-950/60 dark:text-indigo-50' },
+  ].filter(p => p.row)
+
   return (
     <div className="border rounded-lg p-6 bg-white dark:bg-gray-900">
-      <h2 className="text-xl font-bold mb-4">Meilleurs scores de l'année</h2>
-      <SourcesNote sources={yearlyScores.map(s => s.source)} />
-      <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-        Chaque carré représente un jour. La couleur indique qui a eu le meilleur score ce jour-là.
-      </p>
-      
-      {/* Légende */}
-      <div className="mb-4 flex flex-wrap gap-4 text-sm">
-        {members.map(member => (
-          <div key={member.user_id} className="flex items-center gap-2">
-            <div 
-              className="w-4 h-4 rounded border border-gray-300 dark:border-gray-600"
-              style={{ backgroundColor: getUserColor(member.user_id, members) }}
-            />
-            <span>{member.display_name || member.email || member.user_id}</span>
-          </div>
-        ))}
-      </div>
-      
-      {/* Grille */}
-      <div className="overflow-x-auto">
-        <div className="inline-flex gap-1">
-          {/* Labels des jours de la semaine */}
-          <div className="flex flex-col gap-1 pr-2">
-            <div className="h-4"></div>
-            {['Lun', 'Mer', 'Ven'].map(day => (
-              <div key={day} className="h-3 text-xs text-gray-500 dark:text-gray-400">
-                {day}
-              </div>
-            ))}
-            <div className="h-3"></div>
-            {['Dim'].map(day => (
-              <div key={day} className="h-3 text-xs text-gray-500 dark:text-gray-400">
-                {day}
-              </div>
-            ))}
-          </div>
-          
-          {/* Grille des semaines (colonnes) */}
-          <div className="flex gap-1">
-            {weeks.map((week, weekIndex) => (
-              <div key={weekIndex} className="flex flex-col gap-1">
-                {week.map((date, dayIndex) => {
-                  if (!date) {
-                    return <div key={`${weekIndex}-${dayIndex}`} className="w-3 h-3" />
-                  }
-                  
-                  const bestScore = bestScoresByDate.get(date)
-                  const color = bestScore 
-                    ? getUserColor(bestScore.user_id, members)
-                    : '#e5e7eb'
-                  
-                  const memberName = bestScore ? getMemberName(bestScore.user_id) : 'Aucun score'
-                  const score = bestScore ? bestScore.score : null
-                  
-                  return (
-                    <div
-                      key={date}
-                      className="w-3 h-3 rounded-sm border border-gray-200 dark:border-gray-700 cursor-pointer hover:ring-2 hover:ring-gray-400 dark:hover:ring-gray-500 transition-all"
-                      style={{ backgroundColor: color }}
-                      title={score !== null 
-                        ? `${formatTooltipDate(date)}\n${memberName}: ${score}`
-                        : formatTooltipDate(date)
-                      }
-                    />
-                  )
-                })}
-              </div>
-            ))}
-          </div>
+      <div className="flex items-start justify-between gap-4 mb-4">
+        <div>
+          <h2 className="text-xl font-bold">Nuit dernière</h2>
+          <SourcesNote className="mt-1" sources={rows.map(r => r.source)} />
+          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+            Nuit du {formatDay(previousDay(date), { weekday: 'short', day: 'numeric' })} au{' '}
+            {formatDay(date, { weekday: 'short', day: 'numeric', month: 'long' })}
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setIndex(i => i + 1)}
+            disabled={index >= dates.length - 1}
+            aria-label="Nuit précédente"
+            className="w-10 h-10 rounded-lg border inline-flex items-center justify-center hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M15 18l-6-6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+          <button
+            onClick={() => setIndex(i => i - 1)}
+            disabled={index <= 0}
+            aria-label="Nuit suivante"
+            className="w-10 h-10 rounded-lg border inline-flex items-center justify-center hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M9 18l6-6-6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
         </div>
       </div>
-      
-      {/* Labels des mois */}
-      <div className="mt-2 flex gap-1 pl-8">
-        {Array.from({ length: 12 }, (_, i) => {
-          const monthDate = new Date(new Date().getFullYear(), i, 1)
-          const monthStart = monthDate.toISOString().split('T')[0]
-          const dateIndex = dates.findIndex(d => d >= monthStart)
-          
-          if (dateIndex === -1) return null
-          
-          // Calculer dans quelle semaine se trouve cette date
-          const firstDate = new Date(dates[0])
-          const firstDayOfWeek = getDayOfWeek(firstDate)
-          const weekIndex = Math.floor((dateIndex + firstDayOfWeek) / 7)
-          
+
+      {ranked.length === 0 && maxTotal === 0 ? (
+        <div className="text-sm text-gray-500 dark:text-gray-400 py-6 text-center">
+          Aucune donnée pour cette nuit.
+        </div>
+      ) : (
+        <>
+          {podium.length > 0 && (
+            <div className="flex items-end justify-center gap-3 max-w-md mx-auto mb-6">
+              {podium.map(({ row, place, height, color }) => (
+                <div key={row.user_id} className="flex-1 min-w-0 flex flex-col items-center gap-1.5">
+                  <div className="w-12 h-12 rounded-full bg-indigo-100 text-indigo-800 dark:bg-indigo-900/60 dark:text-indigo-100 flex items-center justify-center text-lg font-bold">
+                    {row.name.charAt(0).toUpperCase()}
+                  </div>
+                  <div className={`text-sm truncate max-w-full ${row.isMe ? 'font-bold' : 'font-semibold'}`}>
+                    {row.name}
+                  </div>
+                  <SourceTag source={row.source} />
+                  <div className={`w-full ${height} ${color} rounded-t-lg flex flex-col items-center pt-2`}>
+                    <div className="text-2xl font-bold leading-none">{row.score}</div>
+                    <div className="text-xs font-semibold mt-1">{place}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="divide-y dark:divide-gray-800">
+            {rows.map(row => {
+              const rank = ranked.indexOf(row)
+              const asleep = row.total - (row.byType.awake ?? 0)
+              return (
+                <div key={row.user_id} className="py-3">
+                  <div className="flex items-baseline gap-3">
+                    <span className="w-5 text-sm font-bold text-gray-500 dark:text-gray-400">
+                      {rank >= 0 ? rank + 1 : ''}
+                    </span>
+                    <span className={`flex-1 min-w-0 truncate ${row.isMe ? 'font-bold' : 'font-medium'}`}>
+                      {row.name}
+                      {row.isMe && <span className="ml-1 text-xs font-normal text-gray-500 dark:text-gray-400">(toi)</span>}
+                    </span>
+                    {row.total > 0 && (
+                      <span className="text-sm text-gray-600 dark:text-gray-400">{formatDuration(asleep)}</span>
+                    )}
+                    <span className="w-8 text-right font-bold">{row.score ?? '—'}</span>
+                  </div>
+                  {row.total > 0 ? (
+                    <div className="ml-8 mt-1.5">
+                      <div
+                        className="flex h-2.5 rounded-full overflow-hidden"
+                        style={{ width: `${(row.total / maxTotal) * 100}%` }}
+                      >
+                        {PHASES.map(p =>
+                          row.byType[p.type] ? (
+                            <div
+                              key={p.type}
+                              style={{ width: `${(row.byType[p.type] / row.total) * 100}%`, backgroundColor: p.color }}
+                              title={`${p.label} : ${formatDuration(row.byType[p.type])}`}
+                            />
+                          ) : null
+                        )}
+                      </div>
+                      <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        {PHASES.filter(p => p.type !== 'light' && row.byType[p.type])
+                          .map(p => `${p.label} ${formatDuration(row.byType[p.type])}`)
+                          .join(' · ')}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="ml-8 mt-1 text-xs text-gray-400 dark:text-gray-500">
+                      {row.score !== null ? 'Phases indisponibles' : 'Pas de données cette nuit'}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+
+          <div className="mt-3">
+            <PhasesLegend />
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// Classement de la semaine : moyenne, mini-courbe des 7 nuits et écart avec la semaine précédente
+function WeekRanking({
+  dates,
+  members,
+  yearlyScores,
+  currentUserId,
+}: {
+  dates: string[] // les 7 derniers jours, du plus récent au plus ancien
+  members: MemberScore[]
+  yearlyScores: YearlyScore[]
+  currentUserId: string | null
+}) {
+  const [openId, setOpenId] = useState<string | null>(null)
+
+  const chrono = [...dates].reverse()
+  const weekStart = chrono[0]
+  const previousStart = (() => {
+    const d = new Date(`${weekStart}T00:00:00Z`)
+    d.setUTCDate(d.getUTCDate() - 7)
+    return d.toISOString().split('T')[0]
+  })()
+
+  const average = (values: number[]) =>
+    values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : null
+
+  const rows = members
+    .map(member => {
+      const nights = chrono.map(date => {
+        const s = member.scores.find(sc => sc.date === date)
+        return { date, score: s?.score ?? null, source: s?.source ?? null }
+      })
+      const scored = nights.filter(n => n.score !== null)
+      const avg = average(scored.map(n => n.score as number))
+      // La semaine précédente vient des scores annuels (chargés à part) : pas d'écart tant qu'ils manquent
+      const previous = average(
+        yearlyScores
+          .filter(s => s.user_id === member.user_id && s.score !== null && s.date >= previousStart && s.date < weekStart)
+          .map(s => s.score as number)
+      )
+      return {
+        user_id: member.user_id,
+        name: memberName(member),
+        isMe: member.user_id === currentUserId,
+        nights,
+        avg,
+        delta: avg !== null && previous !== null ? Math.round(avg) - Math.round(previous) : null,
+        source: scored.length > 0 ? scored[scored.length - 1].source : null,
+      }
+    })
+    .sort((a, b) => (b.avg ?? -1) - (a.avg ?? -1))
+
+  // Même échelle verticale pour toutes les courbes, pour pouvoir les comparer
+  const allScores = rows.flatMap(r => r.nights.map(n => n.score)).filter((s): s is number => s !== null)
+  const lo = Math.min(...allScores, 100) - 3
+  const hi = Math.max(...allScores, 0) + 3
+  const W = 104
+  const H = 36
+  const point = (i: number, score: number) => ({
+    x: 4 + (i * (W - 8)) / (chrono.length - 1),
+    y: H - 4 - ((score - lo) / Math.max(1, hi - lo)) * (H - 8),
+  })
+
+  return (
+    <div className="border rounded-lg p-6 bg-white dark:bg-gray-900">
+      <h2 className="text-xl font-bold">Classement de la semaine</h2>
+      <SourcesNote className="mt-1" sources={rows.flatMap(r => r.nights.map(n => n.source))} />
+      <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 mb-2">
+        Du {formatDay(chrono[0], { weekday: 'short', day: 'numeric' })} au{' '}
+        {formatDay(chrono[chrono.length - 1], { weekday: 'short', day: 'numeric', month: 'long' })} · moyenne des scores
+      </p>
+
+      <div className="divide-y dark:divide-gray-800">
+        {rows.map((row, i) => {
+          const points = row.nights
+            .map((n, k) => (n.score !== null ? point(k, n.score) : null))
+            .filter((p): p is { x: number; y: number } => p !== null)
+          const last = points[points.length - 1]
+          const open = openId === row.user_id
           return (
-            <div 
-              key={i} 
-              className="text-xs text-gray-500 dark:text-gray-400"
-              style={{ marginLeft: i === 0 ? '0' : `${weekIndex * 4}px` }}
-            >
-              {monthDate.toLocaleDateString('fr-FR', { month: 'short' })}
+            <div key={row.user_id}>
+              <button
+                onClick={() => setOpenId(open ? null : row.user_id)}
+                aria-expanded={open}
+                className="w-full flex items-center gap-3 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-800/60 rounded-lg"
+              >
+                <span className="w-5 text-sm font-bold text-gray-500 dark:text-gray-400">
+                  {row.avg !== null ? i + 1 : ''}
+                </span>
+                <span className="flex-1 min-w-0">
+                  <span className="flex items-center gap-2">
+                    <span className={`truncate ${row.isMe ? 'font-bold' : 'font-medium'}`}>{row.name}</span>
+                    <SourceTag source={row.source} />
+                  </span>
+                  {row.delta !== null && (
+                    <span
+                      className={`block text-xs font-semibold mt-0.5 ${
+                        row.delta > 0 ? 'text-green-700' : row.delta < 0 ? 'text-red-700' : 'text-gray-500'
+                      }`}
+                    >
+                      {row.delta > 0 ? `↗ +${row.delta}` : row.delta < 0 ? `↘ ${row.delta}` : '→ stable'} vs sem. dernière
+                    </span>
+                  )}
+                </span>
+                <svg
+                  width={W}
+                  height={H}
+                  viewBox={`0 0 ${W} ${H}`}
+                  role="img"
+                  aria-label={`Scores de ${row.name} sur 7 nuits`}
+                  className="shrink-0"
+                >
+                  {points.length > 1 && (
+                    <polyline
+                      points={points.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ')}
+                      fill="none"
+                      stroke={row.isMe ? '#4338ca' : '#9ca3af'}
+                      strokeWidth="2"
+                      strokeLinejoin="round"
+                      strokeLinecap="round"
+                    />
+                  )}
+                  {last && <circle cx={last.x} cy={last.y} r="3.5" fill={row.isMe ? '#4338ca' : '#9ca3af'} />}
+                </svg>
+                <span className="w-12 text-right">
+                  <span className="block text-2xl font-bold leading-none">
+                    {row.avg !== null ? Math.round(row.avg) : '—'}
+                  </span>
+                  <span className="block text-[10px] text-gray-500 dark:text-gray-400 mt-1">moy.</span>
+                </span>
+              </button>
+
+              {open && (
+                <div className="grid grid-cols-7 gap-1 pb-3 pl-8">
+                  {row.nights.map(n => (
+                    <div key={n.date} className="flex flex-col items-center gap-1 rounded-md bg-gray-50 dark:bg-gray-800 py-2">
+                      <span className="text-[10px] text-gray-500 dark:text-gray-400">
+                        {formatDay(n.date, { weekday: 'short' })}
+                      </span>
+                      <span className="text-sm font-semibold">{n.score ?? '—'}</span>
+                      <SourceTag source={n.source} />
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )
         })}
       </div>
+      <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">Clique sur un membre pour voir ses nuits une par une.</p>
+    </div>
+  )
+}
+
+type WinsPeriod = 'month' | 'quarter' | 'year'
+
+const WINS_PERIODS: Array<{ key: WinsPeriod; label: string }> = [
+  { key: 'month', label: 'Ce mois' },
+  { key: 'quarter', label: '3 mois' },
+  { key: 'year', label: String(new Date().getFullYear()) },
+]
+
+// Nuits gagnées : qui a eu le meilleur score, combien de fois, et les séries en cours
+function SeasonWins({
+  yearlyScores,
+  members,
+  currentUserId,
+}: {
+  yearlyScores: YearlyScore[]
+  members: MemberScore[]
+  currentUserId: string | null
+}) {
+  const [period, setPeriod] = useState<WinsPeriod>('month')
+
+  const today = new Date().toISOString().split('T')[0]
+  const start = (() => {
+    if (period === 'month') return `${today.slice(0, 7)}-01`
+    if (period === 'year') return `${today.slice(0, 4)}-01-01`
+    const d = new Date(`${today}T00:00:00Z`)
+    d.setUTCDate(d.getUTCDate() - 90)
+    return d.toISOString().split('T')[0]
+  })()
+
+  // Scores renseignés jusqu'à aujourd'hui, regroupés par date
+  const byDate = new Map<string, YearlyScore[]>()
+  for (const s of yearlyScores) {
+    if (s.score === null || s.date > today) continue
+    if (!byDate.has(s.date)) byDate.set(s.date, [])
+    byDate.get(s.date)!.push(s)
+  }
+
+  // Une nuit compte quand au moins deux membres ont un score ; les ex æquo gagnent tous
+  const contested = Array.from(byDate.entries())
+    .filter(([, scores]) => scores.length >= 2)
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([date, scores]) => {
+      const best = Math.max(...scores.map(s => s.score as number))
+      return { date, best, winners: scores.filter(s => s.score === best).map(s => s.user_id) }
+    })
+
+  const inPeriod = contested.filter(n => n.date >= start)
+  const periodScores = yearlyScores.filter(s => s.score !== null && s.date >= start && s.date <= today)
+
+  const nameOf = (userId: string) => {
+    const m = members.find(m => m.user_id === userId)
+    return m ? memberName(m) : userId
+  }
+
+  const rows = members
+    .map(member => {
+      const mine = periodScores.filter(s => s.user_id === member.user_id)
+      return {
+        user_id: member.user_id,
+        name: memberName(member),
+        isMe: member.user_id === currentUserId,
+        wins: inPeriod.filter(n => n.winners.includes(member.user_id)).length,
+        source: mine.length > 0 ? mine.reduce((a, b) => (a.date > b.date ? a : b)).source : null,
+      }
+    })
+    .sort((a, b) => b.wins - a.wins)
+  const maxWins = Math.max(0, ...rows.map(r => r.wins))
+
+  // Séries : nuits gagnées d'affilée, en ne comptant que les nuits disputées
+  let current: { user_id: string; length: number } | null = null
+  let record: { user_id: string; length: number; endDate: string } | null = null
+  const running = new Map<string, number>()
+  for (const night of contested) {
+    for (const userId of Array.from(running.keys())) {
+      if (!night.winners.includes(userId)) running.delete(userId)
+    }
+    for (const userId of night.winners) {
+      const length = (running.get(userId) ?? 0) + 1
+      running.set(userId, length)
+      if (!record || length > record.length) record = { user_id: userId, length, endDate: night.date }
+    }
+  }
+  for (const [userId, length] of Array.from(running)) {
+    if (!current || length > current.length) current = { user_id: userId, length }
+  }
+
+  // Meilleur score et meilleure moyenne (au moins 3 nuits) sur la période
+  const bestNight = periodScores.reduce<YearlyScore | null>(
+    (best, s) => (!best || (s.score as number) > (best.score as number) ? s : best),
+    null
+  )
+  const bestAverage = members
+    .map(member => {
+      const mine = periodScores.filter(s => s.user_id === member.user_id)
+      const avg = mine.length >= 3 ? mine.reduce((sum, s) => sum + (s.score as number), 0) / mine.length : null
+      return { user_id: member.user_id, avg }
+    })
+    .filter((m): m is { user_id: string; avg: number } => m.avg !== null)
+    .sort((a, b) => b.avg - a.avg)[0]
+
+  return (
+    <div className="border rounded-lg p-6 bg-white dark:bg-gray-900">
+      <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
+        <div>
+          <h2 className="text-xl font-bold">Nuits gagnées</h2>
+          <SourcesNote className="mt-1" sources={periodScores.map(s => s.source)} />
+        </div>
+        <div className="inline-flex rounded-lg bg-gray-100 dark:bg-gray-800 p-1">
+          {WINS_PERIODS.map(p => (
+            <button
+              key={p.key}
+              onClick={() => setPeriod(p.key)}
+              aria-pressed={period === p.key}
+              className={`px-3 py-1.5 rounded-md text-sm ${
+                period === p.key
+                  ? 'bg-white dark:bg-gray-700 font-semibold shadow-sm'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {inPeriod.length === 0 ? (
+        <div className="text-sm text-gray-500 dark:text-gray-400 py-6 text-center">
+          Pas encore de nuit à départager sur cette période (il faut au moins deux scores le même jour).
+        </div>
+      ) : (
+        <div className="space-y-3 max-w-2xl">
+          {rows.map(row => (
+            <div key={row.user_id} className="grid grid-cols-[minmax(0,8rem)_1fr_4rem] items-center gap-3">
+              <div className="min-w-0">
+                <div className={`truncate text-sm ${row.isMe ? 'font-bold' : 'font-medium'}`}>{row.name}</div>
+                <SourceTag source={row.source} />
+              </div>
+              <div className="h-5 rounded-md bg-gray-100 dark:bg-gray-800 overflow-hidden">
+                <div
+                  className={`h-full rounded-md ${row.isMe ? 'bg-indigo-700' : 'bg-indigo-300 dark:bg-indigo-400'}`}
+                  style={{ width: `${maxWins > 0 ? (row.wins / maxWins) * 100 : 0}%` }}
+                />
+              </div>
+              <div className="text-right text-sm text-gray-600 dark:text-gray-400">
+                <span className="text-lg font-bold text-gray-900 dark:text-gray-100">{row.wins}</span> / {inPeriod.length}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {(current && current.length >= 2) || (record && record.length >= 2) ? (
+        <div className="mt-5 flex items-center gap-3 rounded-xl bg-orange-50 dark:bg-orange-950/40 p-3 max-w-2xl">
+          <div className="w-10 h-10 shrink-0 rounded-full bg-white dark:bg-gray-900 text-orange-700 dark:text-orange-400 flex items-center justify-center">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M12 2c1 4 5 6 5 11a5 5 0 0 1-10 0c0-2 1-3.5 2-4.5 0 2 1 3 2 3 0-3-1-6 1-9.5z"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </div>
+          <div>
+            {current && current.length >= 2 && (
+              <div className="text-sm font-bold">
+                {nameOf(current.user_id)} : {current.length} nuits gagnées d&apos;affilée
+              </div>
+            )}
+            {record && record.length >= 2 && (
+              <div className="text-xs text-orange-900 dark:text-orange-200 mt-0.5">
+                Record depuis le {formatDay(contested[0].date, { day: 'numeric', month: 'long' })} : {record.length} nuits (
+                {nameOf(record.user_id)}, {formatDay(record.endDate, { month: 'long' })})
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null}
+
+      {bestNight && (
+        <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-2xl">
+          <div className="rounded-lg bg-gray-50 dark:bg-gray-800 p-3">
+            <div className="text-xs text-gray-500 dark:text-gray-400">Meilleur score</div>
+            <div className="text-sm font-bold mt-0.5">
+              {bestNight.score} · {nameOf(bestNight.user_id)}, {formatDay(bestNight.date, { day: 'numeric', month: 'short' })}
+            </div>
+          </div>
+          {bestAverage && (
+            <div className="rounded-lg bg-gray-50 dark:bg-gray-800 p-3">
+              <div className="text-xs text-gray-500 dark:text-gray-400">Meilleure moyenne</div>
+              <div className="text-sm font-bold mt-0.5">
+                {Math.round(bestAverage.avg)} · {nameOf(bestAverage.user_id)}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -749,6 +937,7 @@ export default function GroupScoresPage() {
   const [loadingPhases, setLoadingPhases] = useState(true)
   const [error, setError] = useState('')
   const [addMembersModalOpen, setAddMembersModalOpen] = useState(false)
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
 
   useEffect(() => {
     if (!groupId) {
@@ -771,6 +960,7 @@ export default function GroupScoresPage() {
           router.replace('/login')
           return
         }
+        setCurrentUserId(session.user.id)
 
         // Les quatre appels sont indépendants : on les lance en parallèle.
         // L'annuel et les phases sont facultatifs et s'affichent dès qu'ils arrivent.
@@ -856,11 +1046,6 @@ export default function GroupScoresPage() {
   }
   dates.sort((a, b) => b.localeCompare(a))
 
-  const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr)
-    return date.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' })
-  }
-
   return (
     <main className="p-6">
       <div className="flex items-center justify-between gap-4 mb-6">
@@ -932,77 +1117,23 @@ export default function GroupScoresPage() {
         <div className="text-gray-600 dark:text-gray-300">Aucun membre dans ce groupe.</div>
       ) : (
         <div className="space-y-6">
-          {/* Widget de grille de contributions */}
-          {!loadingYearly && yearlyScores.length > 0 && (
-            <ContributionGrid yearlyScores={yearlyScores} members={members} />
+          {/* Widget de la nuit dernière (podium et phases) */}
+          {!loadingPhases && (
+            <LastNightPodium
+              dates={dates}
+              members={members}
+              membersPhases={membersPhases}
+              currentUserId={currentUserId}
+            />
           )}
-          
-          {/* Widget des phases de sommeil */}
-          {!loadingPhases && membersPhases.length > 0 && (
-            <SleepPhasesChart membersPhases={membersPhases} />
+
+          {/* Widget du classement de la semaine */}
+          <WeekRanking dates={dates} members={members} yearlyScores={yearlyScores} currentUserId={currentUserId} />
+
+          {/* Widget des nuits gagnées */}
+          {!loadingYearly && members.length >= 2 && yearlyScores.length > 0 && (
+            <SeasonWins yearlyScores={yearlyScores} members={members} currentUserId={currentUserId} />
           )}
-          
-          {/* Widget des scores de la semaine */}
-          <div className="border rounded-lg overflow-hidden">
-            <div className="p-4 bg-gray-50 dark:bg-gray-800 border-b dark:border-gray-700">
-              <h2 className="text-lg font-semibold">Scores de la semaine</h2>
-              <SourcesNote
-                className="mt-1"
-                sources={members.flatMap(m => m.scores.map(s => s.source))}
-              />
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse">
-                <thead>
-                  <tr className="border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
-                    <th className="text-left p-4 font-semibold sticky left-0 bg-gray-50 dark:bg-gray-800 z-10 min-w-[200px]">
-                      Membre
-                    </th>
-                    {dates.map(date => (
-                      <th key={date} className="text-center p-4 font-semibold min-w-[120px]">
-                        <div className="text-sm">{formatDate(date)}</div>
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {members.map((member, idx) => (
-                    <tr
-                      key={member.user_id}
-                      className={`border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 ${
-                        idx % 2 === 0 ? 'bg-white dark:bg-gray-900' : 'bg-gray-50/50 dark:bg-gray-800/50'
-                      }`}
-                    >
-                      <td className="p-4 sticky left-0 bg-inherit z-10">
-                        <div className="font-medium">
-                          {member.display_name || member.email || member.user_id}
-                        </div>
-                        {member.display_name && member.email && (
-                          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">{member.email}</div>
-                        )}
-                      </td>
-                      {dates.map(date => {
-                        const scoreData = member.scores.find(s => s.date === date)
-                        const score = scoreData?.score
-                        return (
-                          <td key={date} className="text-center p-4">
-                            {score !== null && score !== undefined ? (
-                              <div className="flex flex-col items-center gap-1">
-                                <div className="font-semibold text-lg">{score}</div>
-                                <SourceTag source={scoreData?.source} />
-                              </div>
-                            ) : (
-                              <div className="text-gray-400 dark:text-gray-600">—</div>
-                            )}
-                          </td>
-                        )
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
         </div>
       )}
 
